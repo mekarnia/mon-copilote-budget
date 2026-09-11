@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useHome, useToVerifyCount } from "@/lib/queries";
 import { Money, ProgressBar, Empty } from "@/components/ui";
+import { CoachCard } from "@/components/CoachCard";
 import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
 
 export function HomePage() {
@@ -44,6 +45,8 @@ export function HomePage() {
           🔴 Budget dépassé : {data.redBudgets.map((b) => b.categoryName).join(", ")}
         </Link>
       )}
+
+      <CoachCard />
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Où part l'argent</h2>

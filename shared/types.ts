@@ -269,3 +269,33 @@ export interface ImportBatch {
   createdAt: string;
   remaining: number;
 }
+
+// ---- MVC 3 : coach ----
+
+export type InsightKind = "budget_drift" | "unusual_expense" | "undeclared_recurrence" | "low_balance" | "project_progress" | "budget_kept" | "savings";
+
+export interface Insight {
+  kind: InsightKind;
+  severity: "info" | "warning" | "good";
+  title: string;
+  text: string;
+  amount: number | null;
+  link: string | null;
+}
+
+export interface WeeklyAdvice {
+  week: string;
+  message: string;
+  insights: Insight[];
+  generatedBy: "ai" | "template";
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+export const chatInput = z.object({ message: z.string().trim().min(1).max(1000) });

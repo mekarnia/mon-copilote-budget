@@ -11,7 +11,7 @@ const MODEL = "claude-opus-5";
 
 export class AiNotConfigured extends Error {
   constructor() {
-    super("Ajoutez votre clé IA dans Réglages → Sauvegarde et clé IA pour utiliser la photo et la voix.");
+    super("Ajoutez votre clé IA dans Réglages → Sauvegarde et clé IA pour utiliser la photo, la dictée et le coach.");
   }
 }
 

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type {
   BudgetLine, Category, CategoryInput, CategorySuggestion, HomeSummary, ImportBatch, ImportColumnMapping, ImportCommitInput,
-  ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft,
+  ChatMessage, ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft, WeeklyAdvice,
   TransactionInput, TxStatus, Wallet, WalletInput,
 } from "@shared/types";
 
@@ -100,3 +100,10 @@ export const useCancelImport = () => useWrite((id: number) => api.del<{ deleted:
 export interface Rule { id: number; pattern: string; categoryId: number; categoryName: string; hits: number }
 export const useRules = () => useQuery({ queryKey: ["rules"], queryFn: () => api.get<Rule[]>("/api/rules") });
 export const useDeleteRule = () => useWrite((id: number) => api.del(`/api/rules/${id}`));
+
+// ---- MVC 3 ----
+export const useWeeklyAdvice = () => useQuery({ queryKey: ["weeklyAdvice"], queryFn: () => api.get<WeeklyAdvice>("/api/coach/weekly"), staleTime: 60_000 });
+export const useRefreshAdvice = () => useWrite(() => api.get<WeeklyAdvice>("/api/coach/weekly?refresh=1"));
+export const useChat = () => useQuery({ queryKey: ["chat"], queryFn: () => api.get<ChatMessage[]>("/api/coach/chat") });
+export const useSendChat = () => useWrite((message: string) => api.post<ChatMessage>("/api/coach/chat", { message }));
+export const useClearChat = () => useWrite(() => api.del("/api/coach/chat"));

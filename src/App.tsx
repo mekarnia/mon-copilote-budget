@@ -6,6 +6,7 @@ import { BudgetsPage } from "./pages/Budgets";
 import { ProjectsPage } from "./pages/Projects";
 import { TransactionFormPage } from "./pages/TransactionForm";
 import { SettingsPage } from "./pages/Settings";
+import { CoachPage } from "./pages/Coach";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/reglages/*" element={<SettingsPage />} />
       </Route>
       <Route path="/ajouter" element={<TransactionFormPage />} />
+      <Route path="/coach" element={<CoachPage />} />
       <Route path="/operation/:id" element={<TransactionFormPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

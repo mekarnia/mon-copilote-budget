@@ -67,4 +67,8 @@ Les montants sont stockés en centimes (entiers). Les catégories techniques « 
 
 La photo, la dictée et la catégorisation par IA demandent une clé d'API Anthropic, à coller dans Réglages → Sauvegarde et clé IA. Elle est stockée dans la base locale, jamais dans le code ni dans le navigateur. Sans clé, tout le reste fonctionne, y compris l'import et les règles.
 
-À venir : MVC 3 (coach hebdomadaire et chat sur ses propres chiffres).
+## Périmètre livré (MVC 3, coach)
+
+- Carte « Conseil de la semaine » sur l'Accueil, calculée une fois par semaine à partir de constats déterministes : dérive de budget au rythme actuel, dépense inhabituelle, abonnement qui revient chaque mois sans récurrence déclarée, solde juste, projet alimenté, budgets tenus, marge du mois dernier. Le texte est rédigé par l'IA si une clé est présente, sinon par un gabarit.
+- Chat « Mon coach » : questions sur ses propres chiffres, réponse en deux phrases avec un montant, uniquement à partir des données de l'application. Nécessite la clé IA.
+- Ton bienveillant, sans jugement, aucun conseil financier réglementé.

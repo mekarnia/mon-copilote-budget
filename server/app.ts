@@ -6,7 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 import type { DB } from "./db.js";
 import {
-  adjustInput, budgetInput, categoryInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
+  adjustInput, budgetInput, categoryInput, chatInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
   transactionInput, walletInput, type CategorySuggestion, type ImportColumnMapping,
 } from "../shared/types.js";
 import { currentMonth, todayIso } from "../shared/dates.js";
@@ -21,6 +21,8 @@ import { exportCsv, exportJson, importJson } from "./services/backup.js";
 import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
+import * as coach from "./services/coach.js";
+import { computeInsights } from "./services/insights.js";
 
 export interface AppOptions {
   db: DB;
@@ -296,6 +298,20 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.delete("/imports/:id", (c) => {
     if (!importer.getImport(db, id(c.req.param("id")))) return c.json({ error: "Introuvable" }, 404);
     return c.json({ deleted: importer.cancelImport(db, id(c.req.param("id"))) });
+  });
+
+  // ---- MVC 3 : coach ----
+  api.get("/coach/weekly", async (c) => c.json(await coach.weeklyAdvice(db, { force: c.req.query("refresh") === "1" })));
+  api.get("/coach/insights", (c) => c.json(computeInsights(db)));
+  api.get("/coach/chat", (c) => c.json(coach.listMessages(db)));
+  api.delete("/coach/chat", (c) => { coach.clearMessages(db); return c.json({ ok: true }); });
+  api.post("/coach/chat", async (c) => {
+    const { message } = parse(chatInput, await c.req.json());
+    try {
+      return c.json(await coach.chat(db, message), 201);
+    } catch (e) {
+      return aiError(e);
+    }
   });
 
   app.route("/api", api);

@@ -1,7 +1,7 @@
 import type { DB } from "../db.js";
 import { listTransactions } from "./transactions.js";
 
-const TABLES = ["wallets", "categories", "projects", "recurrences", "imports", "transactions", "budgets", "settings", "category_rules"] as const;
+const TABLES = ["wallets", "categories", "projects", "recurrences", "imports", "transactions", "budgets", "settings", "category_rules", "chat_messages", "weekly_advice"] as const;
 
 export function exportJson(db: DB): Record<string, unknown[]> {
   const out: Record<string, unknown[]> = { version: [1] };
