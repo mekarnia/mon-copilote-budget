@@ -1,0 +1,188 @@
+import { z } from "zod";
+
+// Montants stockés en centimes (entiers) pour éviter les erreurs de flottants.
+export const WALLET_TYPES = ["courant", "especes", "livret", "autre"] as const;
+export type WalletType = (typeof WALLET_TYPES)[number];
+
+export const TX_TYPES = ["expense", "income", "transfer"] as const;
+export type TxType = (typeof TX_TYPES)[number];
+
+export const CATEGORY_KINDS = ["expense", "income", "technical"] as const;
+export type CategoryKind = (typeof CATEGORY_KINDS)[number];
+
+export const FREQUENCIES = ["monthly", "weekly"] as const;
+export type Frequency = (typeof FREQUENCIES)[number];
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date attendue au format AAAA-MM-JJ");
+const cents = z.number().int().positive("Le montant doit être positif");
+
+export const walletInput = z.object({
+  name: z.string().trim().min(1).max(60),
+  type: z.enum(WALLET_TYPES),
+  initialBalance: z.number().int().default(0),
+});
+export type WalletInput = z.infer<typeof walletInput>;
+
+export interface Wallet extends WalletInput {
+  id: number;
+  balance: number;
+  archived: boolean;
+}
+
+export const adjustInput = z.object({
+  realBalance: z.number().int(),
+  date: isoDate.optional(),
+});
+
+export const categoryInput = z.object({
+  name: z.string().trim().min(1).max(60),
+  kind: z.enum(CATEGORY_KINDS).default("expense"),
+  parentId: z.number().int().nullable().default(null),
+  icon: z.string().max(4).nullable().default(null),
+});
+export type CategoryInput = z.infer<typeof categoryInput>;
+
+export interface Category extends CategoryInput {
+  id: number;
+  sort: number;
+  technicalKey: string | null;
+}
+
+export const transactionInput = z
+  .object({
+    type: z.enum(TX_TYPES),
+    amount: cents,
+    date: isoDate,
+    walletId: z.number().int(),
+    toWalletId: z.number().int().nullable().default(null),
+    categoryId: z.number().int().nullable().default(null),
+    projectId: z.number().int().nullable().default(null),
+    label: z.string().trim().max(120).default(""),
+    note: z.string().trim().max(500).default(""),
+  })
+  .superRefine((v, ctx) => {
+    if (v.type === "transfer") {
+      if (!v.toWalletId) ctx.addIssue({ code: "custom", path: ["toWalletId"], message: "Portefeuille de destination requis" });
+      if (v.toWalletId === v.walletId) ctx.addIssue({ code: "custom", path: ["toWalletId"], message: "Les deux portefeuilles doivent être différents" });
+    } else if (!v.categoryId) {
+      ctx.addIssue({ code: "custom", path: ["categoryId"], message: "Catégorie requise" });
+    }
+  });
+export type TransactionInput = z.infer<typeof transactionInput>;
+
+export interface Transaction extends TransactionInput {
+  id: number;
+  photoPath: string | null;
+  recurrenceId: number | null;
+  technical: boolean;
+  categoryName: string | null;
+  walletName: string;
+  toWalletName: string | null;
+}
+
+export const recurrenceInput = z
+  .object({
+    label: z.string().trim().min(1).max(120),
+    type: z.enum(TX_TYPES),
+    amount: cents,
+    frequency: z.enum(FREQUENCIES),
+    day: z.number().int().min(0).max(31),
+    walletId: z.number().int(),
+    toWalletId: z.number().int().nullable().default(null),
+    categoryId: z.number().int().nullable().default(null),
+    startDate: isoDate.optional(),
+    active: z.boolean().default(true),
+  })
+  .superRefine((v, ctx) => {
+    if (v.frequency === "monthly" && (v.day < 1 || v.day > 31))
+      ctx.addIssue({ code: "custom", path: ["day"], message: "Jour du mois entre 1 et 31" });
+    if (v.frequency === "weekly" && v.day > 6)
+      ctx.addIssue({ code: "custom", path: ["day"], message: "Jour de la semaine entre 0 (dimanche) et 6" });
+    if (v.type === "transfer" && !v.toWalletId)
+      ctx.addIssue({ code: "custom", path: ["toWalletId"], message: "Portefeuille de destination requis" });
+    if (v.type !== "transfer" && !v.categoryId)
+      ctx.addIssue({ code: "custom", path: ["categoryId"], message: "Catégorie requise" });
+  });
+export type RecurrenceInput = z.infer<typeof recurrenceInput>;
+
+export interface Recurrence extends RecurrenceInput {
+  id: number;
+  nextDate: string;
+  categoryName: string | null;
+  walletName: string;
+}
+
+export const budgetInput = z.object({
+  categoryId: z.number().int(),
+  amount: z.number().int().min(0),
+});
+export type BudgetInput = z.infer<typeof budgetInput>;
+
+export interface BudgetLine {
+  categoryId: number;
+  categoryName: string;
+  icon: string | null;
+  amount: number;
+  spent: number;
+  ratio: number;
+  status: "green" | "orange" | "red" | "none";
+}
+
+export const projectInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  target: cents,
+  dueDate: isoDate.nullable().default(null),
+  walletId: z.number().int(),
+});
+export type ProjectInput = z.infer<typeof projectInput>;
+
+export interface Project extends ProjectInput {
+  id: number;
+  saved: number;
+  remaining: number;
+  ratio: number;
+  monthlyNeeded: number | null;
+  done: boolean;
+  walletName: string;
+}
+
+export const contributeInput = z.object({
+  amount: cents,
+  fromWalletId: z.number().int(),
+  date: isoDate.optional(),
+});
+
+export interface UpcomingBill {
+  recurrenceId: number;
+  label: string;
+  amount: number;
+  date: string;
+  type: TxType;
+}
+
+export interface CategoryTotal {
+  categoryId: number;
+  name: string;
+  icon: string | null;
+  total: number;
+}
+
+export interface HomeSummary {
+  month: string;
+  income: number;
+  expense: number;
+  upcomingExpense: number;
+  remaining: number;
+  byCategory: CategoryTotal[];
+  upcoming: UpcomingBill[];
+  redBudgets: BudgetLine[];
+  projects: Project[];
+  walletsTotal: number;
+}
+
+export interface LabelSuggestion {
+  label: string;
+  categoryId: number | null;
+  walletId: number;
+  type: TxType;
+}

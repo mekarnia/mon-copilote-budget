@@ -1,0 +1,225 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serveStatic } from "@hono/node-server/serve-static";
+import fs from "node:fs";
+import path from "node:path";
+import type { z } from "zod";
+import type { DB } from "./db.js";
+import {
+  adjustInput, budgetInput, categoryInput, contributeInput, projectInput, recurrenceInput, transactionInput, walletInput,
+} from "../shared/types.js";
+import { currentMonth, todayIso } from "../shared/dates.js";
+import * as wallets from "./services/wallets.js";
+import * as categories from "./services/categories.js";
+import * as tx from "./services/transactions.js";
+import * as rec from "./services/recurrences.js";
+import * as budgets from "./services/budgets.js";
+import * as projects from "./services/projects.js";
+import { homeSummary } from "./services/home.js";
+import { exportCsv, exportJson, importJson } from "./services/backup.js";
+
+export interface AppOptions {
+  db: DB;
+  uploadsDir: string;
+  distDir?: string;
+}
+
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function parse<S extends z.ZodTypeAny>(schema: S, body: unknown): z.output<S> {
+  const r = schema.safeParse(body);
+  if (!r.success) throw new HttpError(400, r.error.issues.map((i) => `${i.path.join(".") || "champ"} : ${i.message}`).join(" ; "));
+  return r.data;
+}
+
+const id = (s: string) => {
+  const n = Number(s);
+  if (!Number.isInteger(n)) throw new HttpError(400, "Identifiant invalide");
+  return n;
+};
+
+export function createApp({ db, uploadsDir, distDir }: AppOptions) {
+  const app = new Hono();
+  app.use("/api/*", cors());
+  app.onError((err, c) => {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
+    console.error(err);
+    return c.json({ error: err.message || "Erreur serveur" }, 500);
+  });
+
+  const api = new Hono();
+
+  // Portefeuilles
+  api.get("/wallets", (c) => c.json(wallets.listWallets(db, c.req.query("all") === "1")));
+  api.post("/wallets", async (c) => c.json(wallets.createWallet(db, parse(walletInput, await c.req.json())), 201));
+  api.put("/wallets/:id", async (c) => {
+    const w = wallets.updateWallet(db, id(c.req.param("id")), parse(walletInput, await c.req.json()));
+    return w ? c.json(w) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.delete("/wallets/:id", (c) => {
+    const r = wallets.removeWallet(db, id(c.req.param("id")));
+    return r === "not_found" ? c.json({ error: "Introuvable" }, 404) : c.json({ result: r });
+  });
+  api.post("/wallets/:id/adjust", async (c) => {
+    const body = parse(adjustInput, await c.req.json());
+    return c.json(wallets.adjustWallet(db, id(c.req.param("id")), body.realBalance, body.date ?? todayIso()));
+  });
+
+  // Catégories
+  api.get("/categories", (c) => c.json(categories.listCategories(db)));
+  api.post("/categories", async (c) => c.json(categories.createCategory(db, parse(categoryInput, await c.req.json())), 201));
+  api.put("/categories/:id", async (c) => {
+    const r = categories.updateCategory(db, id(c.req.param("id")), parse(categoryInput, await c.req.json()));
+    return r ? c.json(r) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.delete("/categories/:id", (c) => {
+    const reassign = c.req.query("reassignTo");
+    try {
+      const ok = categories.deleteCategory(db, id(c.req.param("id")), reassign ? id(reassign) : null);
+      return ok ? c.json({ ok: true }) : c.json({ error: "Catégorie introuvable ou protégée" }, 404);
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  });
+
+  // Opérations
+  api.get("/transactions", (c) => {
+    const walletId = c.req.query("walletId");
+    return c.json(tx.listTransactions(db, {
+      month: c.req.query("month") || undefined,
+      q: c.req.query("q") || undefined,
+      walletId: walletId ? id(walletId) : undefined,
+      limit: c.req.query("limit") ? Number(c.req.query("limit")) : undefined,
+    }));
+  });
+  api.get("/transactions/labels", (c) => c.json(tx.suggestLabels(db, c.req.query("q") ?? "")));
+  api.get("/transactions/:id", (c) => {
+    const t = tx.getTransaction(db, id(c.req.param("id")));
+    return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.post("/transactions", async (c) => c.json(tx.createTransaction(db, parse(transactionInput, await c.req.json())), 201));
+  api.put("/transactions/:id", async (c) => {
+    const t = tx.updateTransaction(db, id(c.req.param("id")), parse(transactionInput, await c.req.json()));
+    return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.delete("/transactions/:id", (c) => {
+    const t = tx.getTransaction(db, id(c.req.param("id")));
+    if (!t) return c.json({ error: "Introuvable" }, 404);
+    if (t.photoPath) fs.rmSync(path.join(uploadsDir, path.basename(t.photoPath)), { force: true });
+    tx.deleteTransaction(db, t.id);
+    return c.json({ ok: true });
+  });
+  api.post("/transactions/:id/photo", async (c) => {
+    const txId = id(c.req.param("id"));
+    const t = tx.getTransaction(db, txId);
+    if (!t) return c.json({ error: "Introuvable" }, 404);
+    const form = await c.req.formData();
+    const file = form.get("photo");
+    if (!(file instanceof File)) throw new HttpError(400, "Photo manquante");
+    if (file.size > 10 * 1024 * 1024) throw new HttpError(400, "Photo trop lourde (10 Mo max)");
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const name = `tx-${txId}-${Date.now()}.${ext}`;
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    fs.writeFileSync(path.join(uploadsDir, name), Buffer.from(await file.arrayBuffer()));
+    if (t.photoPath) fs.rmSync(path.join(uploadsDir, path.basename(t.photoPath)), { force: true });
+    return c.json(tx.setPhoto(db, txId, `/uploads/${name}`));
+  });
+  api.delete("/transactions/:id/photo", (c) => {
+    const t = tx.getTransaction(db, id(c.req.param("id")));
+    if (!t) return c.json({ error: "Introuvable" }, 404);
+    if (t.photoPath) fs.rmSync(path.join(uploadsDir, path.basename(t.photoPath)), { force: true });
+    return c.json(tx.setPhoto(db, t.id, null));
+  });
+
+  // Récurrences
+  api.get("/recurrences", (c) => c.json(rec.listRecurrences(db)));
+  api.get("/recurrences/upcoming", (c) => {
+    const from = c.req.query("from") ?? todayIso();
+    const to = c.req.query("to") ?? from;
+    return c.json(rec.upcomingBills(db, from, to));
+  });
+  api.post("/recurrences", async (c) => c.json(rec.createRecurrence(db, parse(recurrenceInput, await c.req.json())), 201));
+  api.put("/recurrences/:id", async (c) => {
+    const r = rec.updateRecurrence(db, id(c.req.param("id")), parse(recurrenceInput, await c.req.json()));
+    return r ? c.json(r) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.delete("/recurrences/:id", (c) => (rec.deleteRecurrence(db, id(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "Introuvable" }, 404)));
+  api.post("/recurrences/run", (c) => c.json({ created: rec.runDueRecurrences(db) }));
+
+  // Budgets
+  api.get("/budgets", (c) => c.json(budgets.budgetLines(db, c.req.query("month") || currentMonth())));
+  api.put("/budgets", async (c) => {
+    const b = parse(budgetInput, await c.req.json());
+    budgets.setBudget(db, b.categoryId, b.amount);
+    return c.json(budgets.budgetLines(db, c.req.query("month") || currentMonth()));
+  });
+
+  // Projets
+  api.get("/projects", (c) => c.json(projects.listProjects(db)));
+  api.post("/projects", async (c) => c.json(projects.createProject(db, parse(projectInput, await c.req.json())), 201));
+  api.put("/projects/:id", async (c) => {
+    const p = projects.updateProject(db, id(c.req.param("id")), parse(projectInput, await c.req.json()));
+    return p ? c.json(p) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.delete("/projects/:id", (c) => (projects.deleteProject(db, id(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "Introuvable" }, 404)));
+  api.post("/projects/:id/contribute", async (c) => {
+    const b = parse(contributeInput, await c.req.json());
+    try {
+      return c.json(projects.contribute(db, id(c.req.param("id")), b.amount, b.fromWalletId, b.date ?? todayIso()));
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  });
+
+  // Accueil
+  api.get("/home", (c) => {
+    rec.runDueRecurrences(db);
+    return c.json(homeSummary(db, c.req.query("month") || currentMonth()));
+  });
+
+  // Sauvegarde
+  api.get("/backup.json", (c) => {
+    c.header("Content-Disposition", `attachment; filename="budget-${todayIso()}.json"`);
+    return c.json(exportJson(db));
+  });
+  api.post("/backup.json", async (c) => {
+    const data = (await c.req.json()) as Record<string, unknown[]>;
+    if (!Array.isArray(data.transactions) || !Array.isArray(data.wallets)) throw new HttpError(400, "Fichier de sauvegarde invalide");
+    importJson(db, data);
+    return c.json({ ok: true });
+  });
+  api.get("/export.csv", (c) => {
+    c.header("Content-Type", "text/csv; charset=utf-8");
+    c.header("Content-Disposition", `attachment; filename="operations-${todayIso()}.csv"`);
+    return c.body(exportCsv(db));
+  });
+
+  // Réglages (clé IA pour le MVC 2, stockée côté serveur uniquement)
+  api.get("/settings", (c) => {
+    const rows = db.prepare("SELECT key, value FROM settings").all() as unknown as { key: string; value: string }[];
+    const out: Record<string, string> = {};
+    for (const r of rows) out[r.key] = r.key === "aiKey" ? (r.value ? "••••" + r.value.slice(-4) : "") : r.value;
+    return c.json(out);
+  });
+  api.put("/settings", async (c) => {
+    const body = (await c.req.json()) as Record<string, string>;
+    const up = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    for (const [k, v] of Object.entries(body)) if (typeof v === "string" && k.length < 40) up.run(k, v);
+    return c.json({ ok: true });
+  });
+
+  app.route("/api", api);
+  app.notFound((c) => (c.req.path.startsWith("/api/") ? c.json({ error: "Route inconnue" }, 404) : c.text("Not found", 404)));
+
+  app.use("/uploads/*", serveStatic({ root: path.relative(process.cwd(), path.dirname(uploadsDir)) || "." }));
+  if (distDir && fs.existsSync(distDir)) {
+    const rel = path.relative(process.cwd(), distDir) || ".";
+    app.use("/*", serveStatic({ root: rel }));
+    app.get("*", (c) => c.html(fs.readFileSync(path.join(distDir, "index.html"), "utf8")));
+  }
+  return app;
+}
