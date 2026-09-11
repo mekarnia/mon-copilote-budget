@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useTransactions } from "@/lib/queries";
+import { useToVerifyCount, useTransactions } from "@/lib/queries";
 import { Money, MonthNav, Empty } from "@/components/ui";
 import { currentMonth, dayLabel } from "@shared/dates";
 import type { Transaction } from "@shared/types";
@@ -14,7 +14,9 @@ function amountOf(t: Transaction) {
 export function TransactionsPage() {
   const [month, setMonth] = useState(currentMonth());
   const [q, setQ] = useState("");
-  const { data = [], isLoading } = useTransactions(month, q);
+  const [onlyToVerify, setOnlyToVerify] = useState(false);
+  const { data = [], isLoading } = useTransactions(month, q, onlyToVerify ? "to_verify" : undefined);
+  const { data: toVerify } = useToVerifyCount();
 
   const groups = new Map<string, Transaction[]>();
   for (const t of data) groups.set(t.date, [...(groups.get(t.date) ?? []), t]);
@@ -23,7 +25,12 @@ export function TransactionsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Opérations</h1>
-      <MonthNav month={month} onChange={setMonth} />
+      {!onlyToVerify && <MonthNav month={month} onChange={setMonth} />}
+      {(toVerify?.count ?? 0) > 0 && (
+        <button className={`chip w-full text-left ${onlyToVerify ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`} onClick={() => setOnlyToVerify((v) => !v)}>
+          {onlyToVerify ? "← Retour à toutes les opérations" : `⚠️ ${toVerify!.count} opération${toVerify!.count > 1 ? "s" : ""} importée${toVerify!.count > 1 ? "s" : ""} à vérifier`}
+        </button>
+      )}
       <input className="input" placeholder="Rechercher un libellé, une catégorie…" value={q} onChange={(e) => setQ(e.target.value)} />
       <p className="text-sm text-slate-500">Dépensé sur la période : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /></p>
 
@@ -45,6 +52,7 @@ export function TransactionsPage() {
                     <p className="truncate text-sm text-slate-500">
                       {t.type === "transfer" ? "Virement interne" : `${t.categoryName ?? "Sans catégorie"} · ${t.walletName}`}
                       {t.photoPath && " · 📷"}
+                      {t.status === "to_verify" && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800 dark:bg-amber-900 dark:text-amber-200">à vérifier</span>}
                     </p>
                   </div>
                   <Money cents={a.cents} signed={t.type !== "transfer"} className={`font-semibold ${a.cls}`} />

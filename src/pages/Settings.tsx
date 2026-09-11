@@ -6,6 +6,8 @@ import {
 } from "@/lib/queries";
 import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
+import { ImportSettings } from "./ImportSettings";
+import { useDeleteRule, useRules } from "@/lib/queries";
 import { formatCents } from "@shared/money";
 import { WALLET_TYPES, type Category, type Recurrence, type TxType, type Wallet, type WalletType } from "@shared/types";
 
@@ -20,6 +22,8 @@ export function SettingsPage() {
       <Route path="categories" element={<CategoriesSettings />} />
       <Route path="recurrences" element={<RecurrencesSettings />} />
       <Route path="sauvegarde" element={<BackupSettings />} />
+      <Route path="import" element={<ImportSettings />} />
+      <Route path="regles" element={<RulesSettings />} />
     </Routes>
   );
 }
@@ -38,6 +42,8 @@ function SettingsHome() {
     { to: "portefeuilles", icon: "👛", label: "Portefeuilles", hint: "Soldes, correction du solde" },
     { to: "categories", icon: "🏷️", label: "Catégories", hint: "Ajouter, renommer, supprimer" },
     { to: "recurrences", icon: "🔁", label: "Récurrences", hint: "Loyer, salaire, cantine…" },
+    { to: "import", icon: "📥", label: "Importer un relevé", hint: "Fichier CSV de la banque" },
+    { to: "regles", icon: "🧠", label: "Règles apprises", hint: "Libellé → catégorie" },
     { to: "sauvegarde", icon: "💾", label: "Sauvegarde et clé IA", hint: "Export, restauration, réglages IA" },
   ];
   return (
@@ -289,13 +295,38 @@ function BackupSettings() {
         {message && <p className="text-sm">{message}</p>}
       </div>
       <div className="card space-y-3">
-        <h2 className="font-semibold">Clé IA (pour la photo et la voix, à venir)</h2>
-        <p className="text-sm text-slate-500">Stockée uniquement sur le serveur local. {settings.aiKey ? `Clé enregistrée : ${settings.aiKey}` : "Aucune clé enregistrée."}</p>
+        <h2 className="font-semibold">Clé IA (photo de ticket, dictée, catégorisation)</h2>
+        <p className="text-sm text-slate-500">Clé d'API Anthropic, stockée uniquement sur le serveur local. Sans clé, tout le reste fonctionne. {settings.aiKey ? `Clé enregistrée : ${settings.aiKey}` : "Aucune clé enregistrée."}</p>
         <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); await saveSettings.mutateAsync({ aiKey }); setAiKey(""); }}>
           <input className="input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder="Coller la clé" />
           <button className="btn-primary" disabled={!aiKey}>OK</button>
         </form>
       </div>
+    </div>
+  );
+}
+
+function RulesSettings() {
+  const { data: rules = [] } = useRules();
+  const remove = useDeleteRule();
+  return (
+    <div className="space-y-4">
+      <Back title="Règles apprises" />
+      <p className="text-sm text-slate-500">Chaque fois que vous choisissez une catégorie pour un libellé, l'application s'en souvient. Les libellés importés qui ressemblent à ces motifs sont catégorisés sans IA.</p>
+      {rules.length === 0 && <p className="card text-sm text-slate-500">Aucune règle pour l'instant. Elles se créent toutes seules à la saisie.</p>}
+      {rules.length > 0 && (
+        <div className="card divide-y divide-slate-100 p-0 dark:divide-slate-800">
+          {rules.map((r) => (
+            <div key={r.id} className="flex items-center gap-3 px-4 py-3 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{r.pattern}</p>
+                <p className="text-slate-500">→ {r.categoryName} · utilisée {r.hits} fois</p>
+              </div>
+              <button className="text-slate-400" aria-label="Supprimer la règle" onClick={() => remove.mutate(r.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

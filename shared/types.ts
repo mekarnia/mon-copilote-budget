@@ -70,8 +70,13 @@ export const transactionInput = z
   });
 export type TransactionInput = z.infer<typeof transactionInput>;
 
+export const TX_STATUSES = ["confirmed", "to_verify"] as const;
+export type TxStatus = (typeof TX_STATUSES)[number];
+
 export interface Transaction extends TransactionInput {
   id: number;
+  status: TxStatus;
+  importId: number | null;
   photoPath: string | null;
   recurrenceId: number | null;
   technical: boolean;
@@ -185,4 +190,82 @@ export interface LabelSuggestion {
   categoryId: number | null;
   walletId: number;
   type: TxType;
+}
+
+// ---- MVC 2 : saisie sans effort ----
+
+/** Brouillon renvoyé par l'IA (photo ou voix), à confirmer par l'utilisateur. */
+export interface TransactionDraft {
+  type: TxType | null;
+  amount: number | null;
+  date: string | null;
+  label: string;
+  categoryId: number | null;
+  walletId: number | null;
+  toWalletId: number | null;
+  question: string | null;
+  source: "photo" | "voice";
+}
+
+export const parseTextInput = z.object({ text: z.string().trim().min(1).max(500) });
+
+export interface CategorySuggestion {
+  categoryId: number | null;
+  walletId: number | null;
+  source: "rule" | "ai" | "none";
+}
+
+export interface ImportColumnMapping {
+  date: number;
+  label: number;
+  amount: number | null;
+  debit: number | null;
+  credit: number | null;
+  dateFormat: "dmy" | "ymd" | "mdy";
+}
+
+export interface ImportPreviewRow {
+  date: string | null;
+  label: string;
+  amount: number | null;
+  type: TxType | null;
+  duplicate: boolean;
+  error: string | null;
+}
+
+export interface ImportPreview {
+  columns: string[];
+  sample: string[][];
+  mapping: ImportColumnMapping;
+  savedMapping: boolean;
+  rows: ImportPreviewRow[];
+}
+
+export const importCommitInput = z.object({
+  bank: z.string().trim().min(1).max(60),
+  walletId: z.number().int(),
+  mapping: z.object({
+    date: z.number().int(),
+    label: z.number().int(),
+    amount: z.number().int().nullable(),
+    debit: z.number().int().nullable(),
+    credit: z.number().int().nullable(),
+    dateFormat: z.enum(["dmy", "ymd", "mdy"]),
+  }),
+  csv: z.string().min(1),
+  fileName: z.string().max(200).default(""),
+  skipDuplicates: z.boolean().default(true),
+});
+export type ImportCommitInput = z.infer<typeof importCommitInput>;
+
+export interface ImportBatch {
+  id: number;
+  bank: string;
+  walletId: number;
+  walletName: string;
+  fileName: string;
+  createdCount: number;
+  skippedCount: number;
+  createdAt: string;
+  remaining: number;
 }

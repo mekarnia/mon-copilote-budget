@@ -6,7 +6,8 @@ import path from "node:path";
 import type { z } from "zod";
 import type { DB } from "./db.js";
 import {
-  adjustInput, budgetInput, categoryInput, contributeInput, projectInput, recurrenceInput, transactionInput, walletInput,
+  adjustInput, budgetInput, categoryInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
+  transactionInput, walletInput, type CategorySuggestion, type ImportColumnMapping,
 } from "../shared/types.js";
 import { currentMonth, todayIso } from "../shared/dates.js";
 import * as wallets from "./services/wallets.js";
@@ -17,6 +18,9 @@ import * as budgets from "./services/budgets.js";
 import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
+import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory } from "./services/ai.js";
+import { deleteRule, listRules, matchRule } from "./services/rules.js";
+import * as importer from "./services/importer.js";
 
 export interface AppOptions {
   db: DB;
@@ -89,7 +93,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   // Opérations
   api.get("/transactions", (c) => {
     const walletId = c.req.query("walletId");
+    const status = c.req.query("status");
     return c.json(tx.listTransactions(db, {
+      status: status === "to_verify" || status === "confirmed" ? status : undefined,
       month: c.req.query("month") || undefined,
       q: c.req.query("q") || undefined,
       walletId: walletId ? id(walletId) : undefined,
@@ -97,6 +103,11 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     }));
   });
   api.get("/transactions/labels", (c) => c.json(tx.suggestLabels(db, c.req.query("q") ?? "")));
+  api.get("/transactions/to-verify-count", (c) => c.json({ count: tx.countToVerify(db) }));
+  api.post("/transactions/:id/confirm", (c) => {
+    const t = tx.confirmTransaction(db, id(c.req.param("id")));
+    return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);
+  });
   api.get("/transactions/:id", (c) => {
     const t = tx.getTransaction(db, id(c.req.param("id")));
     return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);
@@ -212,6 +223,81 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     return c.json({ ok: true });
   });
 
+  // ---- MVC 2 : IA, catégorisation, import ----
+  const aiError = (e: unknown) => {
+    if (e instanceof AiNotConfigured) throw new HttpError(400, e.message);
+    const msg = (e as Error).message || "Erreur IA";
+    throw new HttpError(502, /401|authentication|invalid x-api-key/i.test(msg) ? "Clé IA refusée : vérifiez-la dans Réglages." : msg);
+  };
+
+  api.post("/ai/receipt", async (c) => {
+    const form = await c.req.formData();
+    const file = form.get("photo");
+    if (!(file instanceof File)) throw new HttpError(400, "Photo manquante");
+    if (file.size > 10 * 1024 * 1024) throw new HttpError(400, "Photo trop lourde (10 Mo max)");
+    const mediaType = file.type === "image/png" ? "image/png" : file.type === "image/webp" ? "image/webp" : "image/jpeg";
+    try {
+      return c.json(await extractReceipt(db, Buffer.from(await file.arrayBuffer()), mediaType));
+    } catch (e) {
+      return aiError(e);
+    }
+  });
+
+  api.post("/ai/parse", async (c) => {
+    const { text } = parse(parseTextInput, await c.req.json());
+    try {
+      return c.json(await parseSpeech(db, text));
+    } catch (e) {
+      return aiError(e);
+    }
+  });
+
+  /** Règle apprise d'abord ; IA seulement si aucune règle et si une clé est configurée. */
+  const categorize = async (label: string): Promise<CategorySuggestion> => {
+    const rule = matchRule(db, label);
+    if (rule) return rule;
+    try {
+      const categoryId = await suggestCategory(db, label);
+      return { categoryId, walletId: null, source: categoryId ? "ai" : "none" };
+    } catch {
+      return { categoryId: null, walletId: null, source: "none" };
+    }
+  };
+  api.get("/categorize", async (c) => {
+    const label = (c.req.query("label") ?? "").trim();
+    if (label.length < 2) return c.json({ categoryId: null, walletId: null, source: "none" } satisfies CategorySuggestion);
+    return c.json(await categorize(label));
+  });
+  api.get("/rules", (c) => c.json(listRules(db)));
+  api.delete("/rules/:id", (c) => (deleteRule(db, id(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "Introuvable" }, 404)));
+
+  api.post("/import/preview", async (c) => {
+    const form = await c.req.formData();
+    const file = form.get("file");
+    if (!(file instanceof File)) throw new HttpError(400, "Fichier manquant");
+    if (file.size > 5 * 1024 * 1024) throw new HttpError(400, "Fichier trop lourd (5 Mo max)");
+    const csv = decodeCsv(Buffer.from(await file.arrayBuffer()));
+    const walletId = id(String(form.get("walletId") ?? ""));
+    const bank = String(form.get("bank") ?? "").trim() || null;
+    const mappingRaw = form.get("mapping");
+    const override = typeof mappingRaw === "string" && mappingRaw ? (JSON.parse(mappingRaw) as ImportColumnMapping) : undefined;
+    try {
+      return c.json({ ...importer.preview(db, csv, walletId, bank, override), csv, banks: importer.knownBanks(db) });
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+  });
+  api.post("/import/commit", async (c) => {
+    const input = parse(importCommitInput, await c.req.json());
+    const batch = await importer.commit(db, input, async (label) => (await categorize(label)).categoryId);
+    return c.json(batch, 201);
+  });
+  api.get("/imports", (c) => c.json(importer.listImports(db)));
+  api.delete("/imports/:id", (c) => {
+    if (!importer.getImport(db, id(c.req.param("id")))) return c.json({ error: "Introuvable" }, 404);
+    return c.json({ deleted: importer.cancelImport(db, id(c.req.param("id"))) });
+  });
+
   app.route("/api", api);
   app.notFound((c) => (c.req.path.startsWith("/api/") ? c.json({ error: "Route inconnue" }, 404) : c.text("Not found", 404)));
 
@@ -222,4 +308,11 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     app.get("*", (c) => c.html(fs.readFileSync(path.join(distDir, "index.html"), "utf8")));
   }
   return app;
+}
+
+/** Les exports bancaires sont souvent en Windows-1252 : on tente UTF-8 et on bascule si des caractères sont cassés. */
+function decodeCsv(buf: Buffer): string {
+  const utf8 = buf.toString("utf8");
+  if (!utf8.includes("\uFFFD")) return utf8;
+  return new TextDecoder("windows-1252").decode(buf);
 }

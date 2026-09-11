@@ -60,7 +60,7 @@ export function runDueRecurrences(db: DB, today = todayIso()): number {
       createTransaction(db, {
         type: r.type, amount: r.amount, date: next, walletId: r.walletId, toWalletId: r.toWalletId,
         categoryId: r.categoryId, projectId: null, label: r.label, note: "",
-      }, { recurrenceId: r.id });
+      }, { recurrenceId: r.id, learn: false });
       created++;
       next = nextOccurrence(r.frequency, r.day, addDays(next, 1));
     }

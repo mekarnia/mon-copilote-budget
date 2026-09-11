@@ -73,13 +73,44 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS category_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pattern TEXT NOT NULL UNIQUE,
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  wallet_id INTEGER REFERENCES wallets(id) ON DELETE SET NULL,
+  hits INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank TEXT NOT NULL,
+  wallet_id INTEGER NOT NULL REFERENCES wallets(id),
+  file_name TEXT NOT NULL DEFAULT '',
+  created_count INTEGER NOT NULL DEFAULT 0,
+  skipped_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
+
+/** Migrations additives : colonnes ajoutées après le MVC 1. */
+const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
+  { table: "transactions", column: "status", ddl: "ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'" },
+  { table: "transactions", column: "import_id", ddl: "ALTER TABLE transactions ADD COLUMN import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL" },
+];
+
+function migrate(db: DB) {
+  for (const m of MIGRATIONS) {
+    const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as unknown as { name: string }[];
+    if (!cols.some((c) => c.name === m.column)) db.exec(m.ddl);
+  }
+}
 
 export function openDb(file: string): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
+  migrate(db);
   seedIfEmpty(db);
   return db;
 }

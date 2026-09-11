@@ -1,11 +1,12 @@
 import { Link } from "react-router-dom";
-import { useHome } from "@/lib/queries";
+import { useHome, useToVerifyCount } from "@/lib/queries";
 import { Money, ProgressBar, Empty } from "@/components/ui";
 import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
 
 export function HomePage() {
   const month = currentMonth();
   const { data, isLoading, error } = useHome(month);
+  const { data: toVerify } = useToVerifyCount();
 
   if (isLoading) return <p className="text-slate-500">Chargement…</p>;
   if (error || !data) return <p className="text-red-600">Impossible de joindre le serveur. Lancez `npm run dev` dans le dossier budget.</p>;
@@ -33,6 +34,11 @@ export function HomePage() {
         </div>
       </section>
 
+      {(toVerify?.count ?? 0) > 0 && (
+        <Link to="/operations" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          ⚠️ {toVerify!.count} opération{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier
+        </Link>
+      )}
       {data.redBudgets.length > 0 && (
         <Link to="/budgets" className="block rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           🔴 Budget dépassé : {data.redBudgets.map((b) => b.categoryName).join(", ")}

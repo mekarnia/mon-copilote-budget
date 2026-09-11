@@ -58,4 +58,13 @@ Les montants sont stockés en centimes (entiers). Les catégories techniques « 
 - Accueil : reste à dépenser, répartition, prochaines factures, projets, total des portefeuilles.
 - Sauvegarde JSON complète avec restauration, clé IA stockée côté serveur pour le MVC 2.
 
-À venir : MVC 2 (photo avec extraction, saisie vocale, import CSV bancaire, règles de catégorisation) puis MVC 3 (coach).
+## Périmètre livré (MVC 2, saisie sans effort)
+
+- Photo de ticket : extraction du montant, de la date, du commerçant et d'une catégorie proposée, puis confirmation en un tap. La photo reste jointe à l'opération.
+- Dictée depuis le bouton « + » : reconnaissance vocale de Chrome, puis extraction des champs par l'IA (« 45 euros de courses chez Carrefour hier »).
+- Import du relevé bancaire CSV : détection des colonnes, format mémorisé par banque, doublons repérés, opérations créées « à vérifier », import annulable d'un coup.
+- Catégorisation : chaque catégorie choisie pour un libellé devient une règle ; l'IA n'intervient que si aucune règle ne correspond. Règles consultables dans Réglages.
+
+La photo, la dictée et la catégorisation par IA demandent une clé d'API Anthropic, à coller dans Réglages → Sauvegarde et clé IA. Elle est stockée dans la base locale, jamais dans le code ni dans le navigateur. Sans clé, tout le reste fonctionne, y compris l'import et les règles.
+
+À venir : MVC 3 (coach hebdomadaire et chat sur ses propres chiffres).

@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useCategories, useDeleteTransaction, useLabels, useRemovePhoto, useSaveTransaction, useTransaction, useUploadPhoto, useWallets } from "@/lib/queries";
+import {
+  categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useLabels, useParseSpeech,
+  useRemovePhoto, useSaveTransaction, useTransaction, useUploadPhoto, useWallets,
+} from "@/lib/queries";
+import { createRecognizer, transcriptOf } from "@/lib/speech";
 import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { todayIso } from "@shared/dates";
 import { formatCents } from "@shared/money";
-import type { TxType } from "@shared/types";
+import type { TransactionDraft, TxType } from "@shared/types";
 
 const TYPE_OPTIONS: { value: TxType; label: string }[] = [
   { value: "expense", label: "Dépense" },
@@ -22,9 +26,13 @@ export function TransactionFormPage() {
   const { data: categories = [] } = useCategories();
   const save = useSaveTransaction();
   const remove = useDeleteTransaction();
+  const confirmTx = useConfirmTransaction();
   const upload = useUploadPhoto();
   const removePhoto = useRemovePhoto();
+  const extract = useExtractReceipt();
+  const parseSpeech = useParseSpeech();
   const fileRef = useRef<HTMLInputElement>(null);
+  const receiptRef = useRef<HTMLInputElement>(null);
 
   const [type, setType] = useState<TxType>("expense");
   const [amount, setAmount] = useState<number | null>(null);
@@ -38,6 +46,14 @@ export function TransactionFormPage() {
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
   const [labelFocused, setLabelFocused] = useState(false);
   const { data: suggestions = [] } = useLabels(labelFocused ? label : "");
+
+  // MVC 2 : brouillon IA, dictée, catégorie proposée
+  const [draftInfo, setDraftInfo] = useState<{ source: "photo" | "voice"; question: string | null } | null>(null);
+  const [listening, setListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [suggested, setSuggested] = useState<"rule" | "ai" | null>(null);
+  const recognizerRef = useRef<ReturnType<typeof createRecognizer>>(null);
+  const speechAvailable = typeof window !== "undefined" && createRecognizer() !== null;
 
   useEffect(() => {
     if (walletId === null && wallets.length) setWalletId(wallets[0].id);
@@ -56,6 +72,66 @@ export function TransactionFormPage() {
     if (existing.note) setShowMore(true);
   }, [existing]);
 
+  useEffect(() => () => recognizerRef.current?.abort(), []);
+
+  function applyDraft(d: TransactionDraft) {
+    if (d.type) setType(d.type);
+    if (d.amount) setAmount(d.amount);
+    if (d.date) setDate(d.date);
+    if (d.walletId && wallets.some((w) => w.id === d.walletId)) setWalletId(d.walletId);
+    if (d.toWalletId) setToWalletId(d.toWalletId);
+    if (d.categoryId && categories.some((c) => c.id === d.categoryId)) setCategoryId(d.categoryId);
+    setLabel(d.label);
+    setDraftInfo({ source: d.source, question: d.question });
+  }
+
+  async function onReceipt(file: File) {
+    setPendingPhoto(file);
+    setShowMore(true);
+    try {
+      applyDraft(await extract.mutateAsync(file));
+    } catch {
+      /* l'erreur est affichée par ErrorBanner, la photo reste attachée */
+    }
+  }
+
+  function toggleListening() {
+    if (listening) {
+      recognizerRef.current?.stop();
+      return;
+    }
+    const r = createRecognizer();
+    if (!r) return;
+    recognizerRef.current = r;
+    setTranscript("");
+    setListening(true);
+    r.onresult = (e) => setTranscript(transcriptOf(e));
+    r.onerror = () => setListening(false);
+    r.onend = () => {
+      setListening(false);
+      setTranscript((t) => {
+        if (t) parseSpeech.mutateAsync(t).then(applyDraft).catch(() => undefined);
+        return t;
+      });
+    };
+    r.start();
+  }
+
+  async function onLabelBlur() {
+    setTimeout(() => setLabelFocused(false), 150);
+    if (categoryId !== null || type === "transfer" || label.trim().length < 2) return;
+    try {
+      const s = await categorize(label);
+      if (s.categoryId && categories.some((c) => c.id === s.categoryId)) {
+        setCategoryId(s.categoryId);
+        setSuggested(s.source === "rule" ? "rule" : "ai");
+        if (s.walletId) setWalletId(s.walletId);
+      }
+    } catch {
+      /* pas de suggestion */
+    }
+  }
+
   const canSave = amount !== null && amount > 0 && walletId !== null && (type === "transfer" ? toWalletId !== null && toWalletId !== walletId : categoryId !== null);
 
   async function submit(e: React.FormEvent) {
@@ -70,24 +146,52 @@ export function TransactionFormPage() {
   }
 
   const isAdjustment = existing?.technical && existing.type !== "transfer";
+  const toVerify = existing?.status === "to_verify";
+  const busy = extract.isPending || parseSpeech.isPending;
 
   return (
     <div className="mx-auto min-h-full max-w-lg px-4 pb-10 pt-4">
       <div className="mb-4 flex items-center justify-between">
         <button className="btn-ghost px-3 py-2" onClick={() => navigate(-1)}>Annuler</button>
-        <h1 className="text-lg font-bold">{editId ? "Modifier" : "Ajouter"}</h1>
+        <h1 className="text-lg font-bold">{editId ? (toVerify ? "À vérifier" : "Modifier") : "Ajouter"}</h1>
         <span className="w-20" />
       </div>
 
+      {!editId && (
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <button type="button" className={`btn ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || busy}>
+            {listening ? "⏹ J'écoute…" : "🎤 Dicter"}
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => receiptRef.current?.click()} disabled={busy}>📷 Ticket</button>
+          <input ref={receiptRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && onReceipt(e.target.files[0])} />
+        </div>
+      )}
+      {!editId && !speechAvailable && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
+      {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 45 euros de courses chez Carrefour hier »"}</p>}
+      {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">🤖 Lecture en cours…</p>}
+      {draftInfo && !busy && (
+        <div className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">
+          <p>{draftInfo.source === "photo" ? "Ticket lu." : "Compris."} Vérifiez puis appuyez sur Ajouter.</p>
+          {draftInfo.question && <p className="mt-1 font-semibold">❓ {draftInfo.question}</p>}
+        </div>
+      )}
+      <ErrorBanner error={extract.error || parseSpeech.error} />
+
+      {toVerify && (
+        <div className="mb-3 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <span>Importée du relevé, à vérifier.</span>
+          <button type="button" className="rounded-lg bg-amber-600 px-3 py-1 font-semibold text-white" onClick={async () => { await confirmTx.mutateAsync(existing!.id); navigate(-1); }}>C'est bon</button>
+        </div>
+      )}
       {isAdjustment && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800">Correction de solde automatique. Vous pouvez la supprimer si elle est erronée.</p>}
 
-      <form onSubmit={submit} className="space-y-5">
-        {!isAdjustment && <Segmented value={type} onChange={(t) => { setType(t); setCategoryId(null); }} options={TYPE_OPTIONS} />}
+      <form onSubmit={submit} className="mt-2 space-y-5">
+        {!isAdjustment && <Segmented value={type} onChange={(t) => { setType(t); setCategoryId(null); setSuggested(null); }} options={TYPE_OPTIONS} />}
         <MoneyInput value={amount} onChange={setAmount} autoFocus={!editId} />
 
         {type !== "transfer" && !isAdjustment && (
-          <Field label="Catégorie">
-            <CategoryPicker categories={categories} type={type} value={categoryId} onChange={setCategoryId} />
+          <Field label={suggested ? `Catégorie (${suggested === "rule" ? "d'après vos habitudes" : "proposée par l'IA"})` : "Catégorie"}>
+            <CategoryPicker categories={categories} type={type} value={categoryId} onChange={(id) => { setCategoryId(id); setSuggested(null); }} />
           </Field>
         )}
 
@@ -114,7 +218,7 @@ export function TransactionFormPage() {
           <Field label="Libellé (facultatif)">
             <div className="relative">
               <input className="input" value={label} placeholder={type === "expense" ? "Carrefour, cantine, essence…" : "Salaire, CAF…"} onChange={(e) => setLabel(e.target.value)}
-                onFocus={() => setLabelFocused(true)} onBlur={() => setTimeout(() => setLabelFocused(false), 150)} />
+                onFocus={() => setLabelFocused(true)} onBlur={onLabelBlur} />
               {labelFocused && suggestions.length > 0 && (
                 <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow dark:border-slate-700 dark:bg-slate-900">
                   {suggestions.map((s) => (
@@ -133,12 +237,12 @@ export function TransactionFormPage() {
         )}
 
         {!showMore ? (
-          <button type="button" className="text-sm text-brand" onClick={() => setShowMore(true)}>+ Note ou photo du ticket</button>
+          <button type="button" className="text-sm text-brand" onClick={() => setShowMore(true)}>+ Note ou photo</button>
         ) : (
           <div className="space-y-3">
             <Field label="Note"><textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             <div className="space-y-2">
-              <span className="label">Photo du ticket</span>
+              <span className="label">Photo</span>
               {existing?.photoPath && !pendingPhoto && (
                 <div className="space-y-2">
                   <img src={existing.photoPath} alt="Ticket" className="max-h-64 rounded-xl" />
@@ -147,13 +251,13 @@ export function TransactionFormPage() {
               )}
               {pendingPhoto && <p className="text-sm text-slate-500">Photo prête : {pendingPhoto.name}</p>}
               <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => setPendingPhoto(e.target.files?.[0] ?? null)} />
-              <button type="button" className="btn-ghost w-full" onClick={() => fileRef.current?.click()}>📷 Prendre ou choisir une photo</button>
+              <button type="button" className="btn-ghost w-full" onClick={() => fileRef.current?.click()}>📷 Joindre une photo</button>
             </div>
           </div>
         )}
 
-        <ErrorBanner error={save.error || upload.error} />
-        <button className="btn-primary w-full text-lg" disabled={!canSave || save.isPending}>{editId ? "Enregistrer" : "Ajouter"}</button>
+        <ErrorBanner error={save.error || upload.error || confirmTx.error} />
+        <button className="btn-primary w-full text-lg" disabled={!canSave || save.isPending || busy}>{editId ? "Enregistrer" : "Ajouter"}</button>
         {editId && (
           <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette opération ?")) { await remove.mutateAsync(editId); navigate(-1); } }}>
             Supprimer

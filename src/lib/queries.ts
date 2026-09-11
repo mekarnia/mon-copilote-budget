@@ -1,15 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type {
-  BudgetLine, Category, CategoryInput, HomeSummary, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput,
-  Transaction, TransactionInput, Wallet, WalletInput,
+  BudgetLine, Category, CategoryInput, CategorySuggestion, HomeSummary, ImportBatch, ImportColumnMapping, ImportCommitInput,
+  ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft,
+  TransactionInput, TxStatus, Wallet, WalletInput,
 } from "@shared/types";
 
 export const useWallets = (all = false) => useQuery({ queryKey: ["wallets", all], queryFn: () => api.get<Wallet[]>(`/api/wallets${all ? "?all=1" : ""}`) });
 export const useCategories = () => useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/api/categories") });
 export const useHome = (month: string) => useQuery({ queryKey: ["home", month], queryFn: () => api.get<HomeSummary>(`/api/home?month=${month}`) });
-export const useTransactions = (month: string, q: string) =>
-  useQuery({ queryKey: ["transactions", month, q], queryFn: () => api.get<Transaction[]>(`/api/transactions?month=${month}&q=${encodeURIComponent(q)}`) });
+export const useTransactions = (month: string, q: string, status?: TxStatus) =>
+  useQuery({
+    queryKey: ["transactions", month, q, status ?? ""],
+    queryFn: () => api.get<Transaction[]>(`/api/transactions?${status ? "" : `month=${month}&`}q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}`),
+  });
+export const useToVerifyCount = () => useQuery({ queryKey: ["toVerifyCount"], queryFn: () => api.get<{ count: number }>("/api/transactions/to-verify-count") });
 export const useTransaction = (id: number | null) =>
   useQuery({ queryKey: ["transaction", id], queryFn: () => api.get<Transaction>(`/api/transactions/${id}`), enabled: id !== null });
 export const useLabels = (q: string) =>
@@ -64,3 +69,34 @@ export const useContribute = () => useWrite(({ id, amount, fromWalletId }: { id:
 
 export const useSaveSettings = () => useWrite((body: Record<string, string>) => api.put("/api/settings", body));
 export const useRestoreBackup = () => useWrite((data: unknown) => api.post("/api/backup.json", data));
+
+// ---- MVC 2 ----
+export const useConfirmTransaction = () => useWrite((id: number) => api.post<Transaction>(`/api/transactions/${id}/confirm`));
+export const categorize = (label: string) => api.get<CategorySuggestion>(`/api/categorize?label=${encodeURIComponent(label)}`);
+export const useParseSpeech = () => useMutation({ mutationFn: (text: string) => api.post<TransactionDraft>("/api/ai/parse", { text }) });
+export const useExtractReceipt = () =>
+  useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("photo", file);
+      return api.post<TransactionDraft>("/api/ai/receipt", form);
+    },
+  });
+export type ImportPreviewResult = ImportPreview & { csv: string; banks: string[] };
+export const useImportPreview = () =>
+  useMutation({
+    mutationFn: ({ file, walletId, bank, mapping }: { file: File; walletId: number; bank: string; mapping?: ImportColumnMapping }) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("walletId", String(walletId));
+      form.append("bank", bank);
+      if (mapping) form.append("mapping", JSON.stringify(mapping));
+      return api.post<ImportPreviewResult>("/api/import/preview", form);
+    },
+  });
+export const useImportCommit = () => useWrite((input: ImportCommitInput) => api.post<ImportBatch>("/api/import/commit", input));
+export const useImports = () => useQuery({ queryKey: ["imports"], queryFn: () => api.get<ImportBatch[]>("/api/imports") });
+export const useCancelImport = () => useWrite((id: number) => api.del<{ deleted: number }>(`/api/imports/${id}`));
+export interface Rule { id: number; pattern: string; categoryId: number; categoryName: string; hits: number }
+export const useRules = () => useQuery({ queryKey: ["rules"], queryFn: () => api.get<Rule[]>("/api/rules") });
+export const useDeleteRule = () => useWrite((id: number) => api.del(`/api/rules/${id}`));
