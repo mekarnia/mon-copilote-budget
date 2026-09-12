@@ -84,8 +84,12 @@ function PeriodIndicator({ type, period, onPeriod }: { type: "expense" | "income
 
 /* ---------- Dépenses évitables ---------- */
 function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod: (p: PeriodKey) => void }) {
-  const { data } = useQuery({ queryKey: ["avoidable", period], queryFn: () => api.get<AvoidableStats>(`/api/stats/avoidable?period=${period}`), placeholderData: (prev) => prev });
+  const { data, error } = useQuery({ queryKey: ["avoidable", period], queryFn: () => api.get<AvoidableStats>(`/api/stats/avoidable?period=${period}`), placeholderData: (prev) => prev });
+  // L'objectif rédigé arrive séparément : les chiffres n'attendent pas l'IA.
+  const aiGoal = useQuery({ queryKey: ["avoidableGoal", period, data?.total], queryFn: () => api.get<{ goal: Goal | null }>(`/api/stats/avoidable/goal?period=${period}`), enabled: !!data && !!data.goal, staleTime: 5 * 60_000 });
+  if (error) return <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{(error as Error).message}</p>;
   if (!data) return <p className="text-slate-500">Chargement…</p>;
+  const goal = aiGoal.data?.goal ?? data.goal;
   const delta = pct(data.deltaPct);
   return (
     <div className="space-y-4">
@@ -107,16 +111,18 @@ function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod:
         ) : (
           <Bars points={data.points} color="fill-[#eb6834] dark:fill-[#d95926]" />
         )}
-        {data.goal && (
+        {goal && (
           <div className="space-y-1.5 rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-200">
-            <p className="font-semibold">🎯 Objectif du coach : passer sous {formatCents(data.goal.target)}, soit {formatCents(data.goal.saving)} de plus{data.goal.projectName ? ` pour ${data.goal.projectName}` : " à mettre de côté"}.</p>
-            <p>{data.goal.reason}</p>
-            {data.goal.actions.length > 0 && (
+            <p className="font-semibold">🎯 Objectif du coach : passer sous {formatCents(goal.target)}, soit {formatCents(goal.saving)} de plus{goal.projectName ? ` pour ${goal.projectName}` : " à mettre de côté"}.</p>
+            <p>{goal.reason}</p>
+            {goal.actions.length > 0 && (
               <ul className="list-disc space-y-0.5 pl-5">
-                {data.goal.actions.map((a, i) => <li key={i}>{a}</li>)}
+                {goal.actions.map((a, i) => <li key={i}>{a}</li>)}
               </ul>
             )}
-            <p className="text-xs opacity-70">{data.goal.generatedBy === "ai" ? "Rédigé par l'IA d'après vos opérations." : "Calculé d'après vos opérations. Ajoutez une clé IA pour des conseils rédigés."}</p>
+            <p className="text-xs opacity-70">
+              {aiGoal.isFetching && !aiGoal.data ? "Le coach rédige son conseil…" : goal.generatedBy === "ai" ? "Rédigé par l'IA d'après vos opérations." : "Calculé d'après vos opérations. Ajoutez une clé IA pour des conseils rédigés."}
+            </p>
           </div>
         )}
       </div>

@@ -153,15 +153,15 @@ const goalSchema = z.object({
   actions: z.array(z.string()).max(3),
 });
 
-/** Statistiques évitables dont l'objectif est rédigé par l'IA quand une clé existe. Mis en cache par jour et par montant. */
-export async function avoidableWithAiGoal(db: DB, period: PeriodKey, today = todayIso()): Promise<AvoidableStats> {
+/** Objectif rédigé par l'IA pour les dépenses évitables ; renvoie l'objectif calculé si pas de clé ou en cas d'échec. Cache par jour et par montant. */
+export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIso()): Promise<AvoidableGoal | null> {
   const stats = avoidableStats(db, period, today);
-  if (!stats.goal || stats.total <= 0) return stats;
+  if (!stats.goal || stats.total <= 0) return null;
   const cacheKey = `goal:${period}`;
   const cached = db.prepare("SELECT value FROM settings WHERE key = ?").get(cacheKey) as { value: string } | undefined;
   if (cached) {
     const c = JSON.parse(cached.value) as { date: string; total: number; goal: AvoidableGoal };
-    if (c.date === today && c.total === stats.total) return { ...stats, goal: c.goal };
+    if (c.date === today && c.total === stats.total) return c.goal;
   }
   let goal: AvoidableGoal = stats.goal;
   try {
@@ -180,7 +180,7 @@ export async function avoidableWithAiGoal(db: DB, period: PeriodKey, today = tod
           frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_euros: l.total / 100, category: l.categoryName })),
         }),
       }],
-    });
+    }, { timeout: 25_000, maxRetries: 0 });
     const p = response.parsed_output;
     if (p && p.target_euros > 0) {
       const cents = Math.round(p.target_euros * 100);
@@ -191,8 +191,10 @@ export async function avoidableWithAiGoal(db: DB, period: PeriodKey, today = tod
       }
     }
   } catch {
-    /* clé absente ou refusée : objectif calculé */
+    /* clé absente, refusée ou trop lente : objectif calculé */
   }
   db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(cacheKey, JSON.stringify({ date: today, total: stats.total, goal }));
-  return { ...stats, goal };
+  return goal;
 }
+
+export { avoidableStats };

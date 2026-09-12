@@ -233,7 +233,8 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     const type = c.req.query("type") === "income" ? "income" : "expense";
     return c.json(periodStats(db, type, periodOf(c.req.query("period"))));
   });
-  api.get("/stats/avoidable", async (c) => c.json(await coach.avoidableWithAiGoal(db, periodOf(c.req.query("period")))));
+  api.get("/stats/avoidable", (c) => c.json(coach.avoidableStats(db, periodOf(c.req.query("period")))));
+  api.get("/stats/avoidable/goal", async (c) => c.json({ goal: await coach.avoidableAiGoal(db, periodOf(c.req.query("period"))) }));
   api.put("/categories/:id/avoidable", async (c) => {
     const body = (await c.req.json()) as { avoidable?: boolean };
     const r = categories.setAvoidable(db, id(c.req.param("id")), body.avoidable === true);
