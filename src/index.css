@@ -40,4 +40,12 @@ body {
   .chip {
     @apply rounded-full px-3 py-1.5 text-sm font-medium;
   }
+  .scroll-row {
+    @apply flex gap-2 overflow-x-auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scroll-row::-webkit-scrollbar {
+    display: none;
+  }
 }

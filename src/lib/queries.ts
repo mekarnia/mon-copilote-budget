@@ -9,12 +9,12 @@ import type {
 export const useWallets = (all = false) => useQuery({ queryKey: ["wallets", all], queryFn: () => api.get<Wallet[]>(`/api/wallets${all ? "?all=1" : ""}`) });
 export const useCategories = () => useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/api/categories") });
 export const useHome = (month: string) => useQuery({ queryKey: ["home", month], queryFn: () => api.get<HomeSummary>(`/api/home?month=${month}`) });
-export const useTransactions = (month: string, q: string, status?: TxStatus, categoryId?: number | null) =>
+export const useTransactions = (month: string | null, q: string, status?: TxStatus, categoryId?: number | null) =>
   useQuery({
-    queryKey: ["transactions", month, q, status ?? "", categoryId ?? 0],
+    queryKey: ["transactions", month ?? "all", q, status ?? "", categoryId ?? 0],
     queryFn: () =>
       api.get<Transaction[]>(
-        `/api/transactions?${status ? "" : `month=${month}&`}q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}${categoryId ? `&categoryId=${categoryId}` : ""}`,
+        `/api/transactions?${status || !month ? "" : `month=${month}&`}q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}${categoryId ? `&categoryId=${categoryId}` : ""}`,
       ),
   });
 export interface CategoryContext {

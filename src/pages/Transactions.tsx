@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useCategories, useToVerifyCount, useTransactions } from "@/lib/queries";
 import { Money, MonthNav, Empty } from "@/components/ui";
-import { currentMonth, dayLabel } from "@shared/dates";
+import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
 import type { Transaction } from "@shared/types";
 
 function amountOf(t: Transaction) {
@@ -14,10 +14,14 @@ function amountOf(t: Transaction) {
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams();
   const categoryId = params.get("categoryId") ? Number(params.get("categoryId")) : null;
+  const allMonths = params.get("all") === "1";
   const [month, setMonth] = useState(params.get("month") ?? currentMonth());
   const [q, setQ] = useState("");
   const [onlyToVerify, setOnlyToVerify] = useState(false);
-  const { data = [], isLoading } = useTransactions(month, q, onlyToVerify ? "to_verify" : undefined, categoryId);
+  const [pickedMonth, setPickedMonth] = useState<string | null>(null); // filtre de la rangée « toutes périodes »
+  const { data: fetched = [], isLoading } = useTransactions(allMonths ? null : month, q, onlyToVerify ? "to_verify" : undefined, categoryId);
+  const availableMonths = allMonths ? [...new Set(fetched.map((t) => t.date.slice(0, 7)))].sort().reverse() : [];
+  const data = allMonths && pickedMonth ? fetched.filter((t) => t.date.startsWith(pickedMonth)) : fetched;
   const { data: categories = [] } = useCategories();
   const filterCat = categories.find((c) => c.id === categoryId);
   const filterParent = filterCat?.parentId ? categories.find((c) => c.id === filterCat.parentId) : null;
@@ -30,11 +34,22 @@ export function TransactionsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Opérations</h1>
-      {!onlyToVerify && <MonthNav month={month} onChange={setMonth} />}
+      {!onlyToVerify && !allMonths && <MonthNav month={month} onChange={setMonth} />}
       {filterCat && (
-        <button className="chip w-full bg-brand/10 text-left" onClick={() => setParams({})}>
-          Filtre : {filterParent ? `${filterParent.icon ?? ""} ${filterParent.name} › ` : `${filterCat.icon ?? ""} `}{filterCat.name} <span className="text-slate-500">✕ retirer</span>
+        <button className="chip w-full bg-brand/10 text-left" onClick={() => { setParams({}); setPickedMonth(null); }}>
+          {filterParent ? `${filterParent.icon ?? ""} ${filterParent.name} › ` : `${filterCat.icon ?? ""} `}{filterCat.name}
+          {allMonths && " · toutes périodes"} <span className="text-slate-500">✕ retirer</span>
         </button>
+      )}
+      {allMonths && availableMonths.length > 0 && (
+        <div className="scroll-row -mx-4 px-4">
+          <button className={`chip shrink-0 ${pickedMonth === null ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => setPickedMonth(null)}>Tout</button>
+          {availableMonths.map((m) => (
+            <button key={m} className={`chip shrink-0 capitalize ${pickedMonth === m ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => setPickedMonth(m)}>
+              {monthLabel(m)}
+            </button>
+          ))}
+        </div>
       )}
       {(toVerify?.count ?? 0) > 0 && (
         <button className={`chip w-full text-left ${onlyToVerify ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`} onClick={() => setOnlyToVerify((v) => !v)}>
@@ -42,7 +57,7 @@ export function TransactionsPage() {
         </button>
       )}
       <input className="input" placeholder="Rechercher un libellé, une catégorie…" value={q} onChange={(e) => setQ(e.target.value)} />
-      <p className="text-sm text-slate-500">Dépensé sur la période : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /></p>
+      <p className="text-sm text-slate-500">{allMonths && !pickedMonth ? "Dépensé au total" : "Dépensé sur la période"} : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /> <span className="text-slate-400">· {data.length} opération{data.length > 1 ? "s" : ""}</span></p>
 
       {isLoading && <p className="text-slate-500">Chargement…</p>}
       {!isLoading && data.length === 0 && <Empty icon="🗒️" text="Aucune opération sur ce mois." />}

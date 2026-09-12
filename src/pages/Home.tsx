@@ -53,18 +53,17 @@ export function HomePage() {
       <CoachCard />
 
       <section className="card space-y-3">
-        <h2 className="font-semibold">Où part l'argent</h2>
         {data.byCategory.length === 0 ? (
           <p className="text-sm text-slate-500">Aucune dépense ce mois-ci. Appuyez sur + pour commencer.</p>
         ) : (
           data.byCategory.slice(0, 5).map((c) => (
-            <div key={c.categoryId}>
+            <Link key={c.categoryId} to={`/operations?categoryId=${c.categoryId}&all=1`} className="block">
               <div className="mb-1 flex justify-between text-sm">
                 <span>{c.icon} {c.name}</span>
-                <Money cents={c.total} className="font-semibold" />
+                <span><Money cents={c.total} className="font-semibold" /> <span className="text-slate-400">›</span></span>
               </div>
               <ProgressBar ratio={c.total / maxCat} status="none" />
-            </div>
+            </Link>
           ))
         )}
       </section>
