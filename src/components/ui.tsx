@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { formatCents, parseEuros } from "@shared/money";
+import { centsToInput, formatCents, parseEuros } from "@shared/money";
 
 export function Money({ cents, className = "", signed = false }: { cents: number; signed?: boolean; className?: string }) {
   const sign = signed ? (cents > 0 ? "+" : "") : "";
@@ -8,9 +8,14 @@ export function Money({ cents, className = "", signed = false }: { cents: number
 
 /** Saisie d'un montant en euros, valeur exposée en centimes. Clavier numérique sur mobile. */
 export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }: { value: number | null; onChange: (cents: number | null) => void; autoFocus?: boolean; placeholder?: string }) {
-  const [text, setText] = useState(value === null ? "" : (value / 100).toFixed(2).replace(".", ","));
+  const [text, setText] = useState(value === null ? "" : centsToInput(value));
+  // Synchronise l'affichage quand la valeur change de l'extérieur (opération chargée, brouillon IA, remise à zéro).
   useEffect(() => {
-    if (value === null && text !== "" && parseEuros(text) !== null) setText("");
+    if (value === null) {
+      if (text !== "" && parseEuros(text) !== null) setText("");
+    } else if (parseEuros(text) !== value) {
+      setText(centsToInput(value));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return (
