@@ -1,9 +1,14 @@
 import type { DB } from "../db.js";
 import type { Category, CategoryInput } from "../../shared/types.js";
 
-interface Row { id: number; name: string; kind: Category["kind"]; parent_id: number | null; icon: string | null; sort: number; technical_key: string | null }
+interface Row { id: number; name: string; kind: Category["kind"]; parent_id: number | null; icon: string | null; sort: number; technical_key: string | null; avoidable: number }
 
-const map = (r: Row): Category => ({ id: r.id, name: r.name, kind: r.kind, parentId: r.parent_id, icon: r.icon, sort: r.sort, technicalKey: r.technical_key });
+const map = (r: Row): Category => ({ id: r.id, name: r.name, kind: r.kind, parentId: r.parent_id, icon: r.icon, sort: r.sort, technicalKey: r.technical_key, avoidable: r.avoidable === 1 });
+
+export function setAvoidable(db: DB, id: number, avoidable: boolean): Category | null {
+  db.prepare("UPDATE categories SET avoidable = ? WHERE id = ?").run(avoidable ? 1 : 0, id);
+  return getCategory(db, id);
+}
 
 export function listCategories(db: DB): Category[] {
   return (db.prepare("SELECT * FROM categories ORDER BY sort, id").all() as unknown as Row[]).map(map);

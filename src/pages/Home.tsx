@@ -35,7 +35,7 @@ export function HomePage() {
           {dashMenu && (
             <div className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900" onMouseLeave={() => setDashMenu(false)}>
               {VIEWS.map((v) => (
-                <Link key={v.key} to={`/suivi?vue=${v.key}`} className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onClick={() => setDashMenu(false)}>
+                <Link key={v.key} to={`/suivi?vue=${v.key}&p=1m`} className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onClick={() => setDashMenu(false)}>
                   <span>{v.icon}</span>{v.label}
                 </Link>
               ))}

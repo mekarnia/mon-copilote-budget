@@ -113,6 +113,7 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: "transactions", column: "import_id", ddl: "ALTER TABLE transactions ADD COLUMN import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL" },
   { table: "transactions", column: "payment_method", ddl: "ALTER TABLE transactions ADD COLUMN payment_method TEXT" },
   { table: "transactions", column: "time", ddl: "ALTER TABLE transactions ADD COLUMN time TEXT" },
+  { table: "categories", column: "avoidable", ddl: "ALTER TABLE categories ADD COLUMN avoidable INTEGER NOT NULL DEFAULT 0" },
 ];
 
 function migrate(db: DB) {
@@ -135,7 +136,13 @@ function migrate(db: DB) {
   }
   for (const m of MIGRATIONS) {
     const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as unknown as { name: string }[];
-    if (!cols.some((c) => c.name === m.column)) db.exec(m.ddl);
+    if (!cols.some((c) => c.name === m.column)) {
+      db.exec(m.ddl);
+      if (m.column === "avoidable") {
+        // Premier marquage : les postes classiquement compressibles.
+        db.prepare("UPDATE categories SET avoidable = 1 WHERE name IN ('Restaurant', 'Sorties', 'Livraison repas', 'Vêtements') AND parent_id IS NOT NULL").run();
+      }
+    }
   }
 }
 
@@ -163,6 +170,7 @@ function seedIfEmpty(db: DB) {
       insert.run(child, group.kind, parentId, null, sort++, null);
     }
   }
+  db.prepare("UPDATE categories SET avoidable = 1 WHERE name IN ('Restaurant', 'Sorties', 'Livraison repas', 'Vêtements') AND parent_id IS NOT NULL").run();
   const wallets = db.prepare("SELECT COUNT(*) AS n FROM wallets").get() as { n: number };
   if (wallets.n === 0) {
     const w = db.prepare("INSERT INTO wallets (name, type, initial_balance) VALUES (?, ?, ?)");

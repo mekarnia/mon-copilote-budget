@@ -50,6 +50,7 @@ export interface Category extends CategoryInput {
   id: number;
   sort: number;
   technicalKey: string | null;
+  avoidable: boolean;
 }
 
 export const transactionInput = z

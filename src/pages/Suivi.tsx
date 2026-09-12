@@ -1,176 +1,214 @@
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Money, MonthNav } from "@/components/ui";
-import { currentMonth, monthLabel } from "@shared/dates";
+import { Segmented } from "@/components/ui";
 import { formatCents } from "@shared/money";
-
-interface MonthPoint { month: string; income: number; expense: number; saved: number; rate: number | null }
-interface CategoryCompare { categoryId: number; name: string; icon: string | null; current: number; previous: number; delta: number }
-interface Stats { month: string; monthly: MonthPoint[]; compare: CategoryCompare[]; savings: { current: MonthPoint; previous: MonthPoint; average6Rate: number | null; bestMonth: MonthPoint | null } }
+import { monthLabel } from "@shared/dates";
 
 export const VIEWS = [
-  { key: "mois", label: "12 mois", icon: "📊" },
-  { key: "comparaison", label: "Mois vs précédent", icon: "⚖️" },
-  { key: "epargne", label: "Épargne", icon: "🐷" },
+  { key: "depenses", label: "Dépenses", icon: "📉" },
+  { key: "revenus", label: "Revenus", icon: "📈" },
+  { key: "evitables", label: "Évitables", icon: "✂️" },
 ] as const;
 type ViewKey = (typeof VIEWS)[number]["key"];
+export type PeriodKey = "7d" | "1m" | "6m" | "1y";
+export const PERIODS: { value: PeriodKey; label: string }[] = [
+  { value: "7d", label: "7 J" }, { value: "1m", label: "1 M" }, { value: "6m", label: "6 M" }, { value: "1y", label: "1 A" },
+];
 
-const short = (m: string) => {
-  const [y, mo] = m.split("-").map(Number);
-  return new Date(y, mo - 1, 1).toLocaleDateString("fr-FR", { month: "short" }).replace(".", "");
-};
+interface Point { label: string; date: string; value: number; cumulative: number }
+interface Cat { categoryId: number; name: string; icon: string | null; total: number; share: number }
+interface Range { key: PeriodKey; from: string; to: string; prevFrom: string; prevTo: string; granularity: "day" | "month"; days: number }
+interface PeriodStats { type: "expense" | "income"; range: Range; total: number; previousTotal: number; deltaPct: number | null; perDay: number; points: Point[]; previousPoints: Point[]; byCategory: Cat[] }
+interface AvoidableStats extends PeriodStats { allExpenses: number; shareOfExpenses: number; goal: { target: number; saving: number; projectName: string | null } | null; avoidableIds: number[] }
+
+const frDate = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
+const shortMonth = (m: string) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("fr-FR", { month: "short" }).replace(".", ""); };
+const rangeLabel = (r: Range) => (r.granularity === "day" ? `Du ${frDate(r.from)} au ${frDate(r.to)}` : `De ${monthLabel(r.from.slice(0, 7))} à ${monthLabel(r.to.slice(0, 7))}`);
+const pct = (v: number | null) => (v === null ? null : `${v > 0 ? "+" : ""}${Math.round(v * 100)} %`);
 
 export function SuiviPage() {
   const [params, setParams] = useSearchParams();
-  const view = (VIEWS.some((v) => v.key === params.get("vue")) ? params.get("vue") : "mois") as ViewKey;
-  const [month, setMonth] = useState(currentMonth());
-  const { data } = useQuery({ queryKey: ["stats", month], queryFn: () => api.get<Stats>(`/api/stats?month=${month}`) });
+  const view = (VIEWS.some((v) => v.key === params.get("vue")) ? params.get("vue") : "depenses") as ViewKey;
+  const period = (PERIODS.some((p) => p.value === params.get("p")) ? params.get("p") : "1m") as PeriodKey;
+  const set = (patch: Record<string, string>) => setParams({ vue: view, p: period, ...patch });
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Suivi</h1>
       <div className="scroll-row -mx-4 px-4">
         {VIEWS.map((v) => (
-          <button key={v.key} className={`chip shrink-0 ${view === v.key ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => setParams({ vue: v.key })}>
-            {v.icon} {v.label}
-          </button>
+          <button key={v.key} className={`chip shrink-0 ${view === v.key ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => set({ vue: v.key })}>{v.label}</button>
         ))}
       </div>
-      <MonthNav month={month} onChange={setMonth} />
-      {!data ? <p className="text-slate-500">Chargement…</p> : view === "mois" ? <MonthlyView data={data} /> : view === "comparaison" ? <CompareView data={data} /> : <SavingsView data={data} />}
+      {view === "depenses" && <PeriodIndicator type="expense" period={period} onPeriod={(p) => set({ p })} />}
+      {view === "revenus" && <PeriodIndicator type="income" period={period} onPeriod={(p) => set({ p })} />}
+      {view === "evitables" && <AvoidableIndicator period={period} onPeriod={(p) => set({ p })} />}
     </div>
   );
 }
 
-/* ---------- Vue 1 : 12 mois en barres, dépenses et revenus ---------- */
-function MonthlyView({ data }: { data: Stats }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const pts = data.monthly;
-  const max = Math.max(1, ...pts.map((p) => Math.max(p.income, p.expense)));
-  const W = 360, H = 180, padL = 8, padB = 22, padT = 8;
-  const innerW = W - padL * 2, innerH = H - padB - padT;
-  const slot = innerW / pts.length, barW = Math.max(4, slot * 0.32), gap = 2;
-  const y = (v: number) => padT + innerH - (v / max) * innerH;
-  const sel = hover !== null ? pts[hover] : pts[pts.length - 1];
-  const totalExp = pts.reduce((s, p) => s + p.expense, 0);
+/* ---------- Dépenses (courbe cumulée) et Revenus (barres) ---------- */
+function PeriodIndicator({ type, period, onPeriod }: { type: "expense" | "income"; period: PeriodKey; onPeriod: (p: PeriodKey) => void }) {
+  const { data } = useQuery({ queryKey: ["periodStats", type, period], queryFn: () => api.get<PeriodStats>(`/api/stats/period?type=${type}&period=${period}`), placeholderData: (prev) => prev });
+  if (!data) return <p className="text-slate-500">Chargement…</p>;
+  const isExpense = type === "expense";
+  const delta = pct(data.deltaPct);
+  const good = data.deltaPct === null ? null : isExpense ? data.deltaPct <= 0 : data.deltaPct >= 0;
   return (
-    <div className="space-y-3">
-      <div className="card space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-semibold capitalize">{monthLabel(sel.month)}</span>
-          <span className="flex gap-3">
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#2a78d6] dark:bg-[#3987e5]" />Dépenses <b>{formatCents(sel.expense)}</b></span>
-            <span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#1baf7a] dark:bg-[#199e70]" />Revenus <b>{formatCents(sel.income)}</b></span>
-          </span>
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-semibold">{isExpense ? "Rythme des dépenses" : "Suivi des revenus"}</h2>
+          <p className="text-xs text-slate-500">{rangeLabel(data.range)}</p>
         </div>
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Dépenses et revenus sur 12 mois" onMouseLeave={() => setHover(null)}>
-          {[0.5, 1].map((f) => <line key={f} x1={padL} x2={W - padL} y1={y(max * f)} y2={y(max * f)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth={1} />)}
-          <line x1={padL} x2={W - padL} y1={y(0)} y2={y(0)} className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
-          {pts.map((p, i) => {
-            const x0 = padL + i * slot + (slot - barW * 2 - gap) / 2;
-            const active = hover === i || (hover === null && i === pts.length - 1);
-            return (
-              <g key={p.month} onMouseEnter={() => setHover(i)} onClick={() => setHover(i)} onTouchStart={() => setHover(i)} opacity={hover === null || active ? 1 : 0.45}>
-                <rect x={padL + i * slot} y={padT} width={slot} height={innerH} fill="transparent" />
-                <rect x={x0} y={y(p.expense)} width={barW} height={Math.max(0, y(0) - y(p.expense))} rx={2} className="fill-[#2a78d6] dark:fill-[#3987e5]" />
-                <rect x={x0 + barW + gap} y={y(p.income)} width={barW} height={Math.max(0, y(0) - y(p.income))} rx={2} className="fill-[#1baf7a] dark:fill-[#199e70]" />
-                <text x={padL + i * slot + slot / 2} y={H - 6} textAnchor="middle" fontSize={10} className={`fill-slate-500 ${active ? "font-semibold" : ""}`}>{short(p.month)}</text>
-              </g>
-            );
-          })}
-        </svg>
-        <p className="text-xs text-slate-500">Touchez un mois pour voir ses chiffres. Sur 12 mois : {formatCents(totalExp)} de dépenses, soit {formatCents(Math.round(totalExp / 12))} par mois en moyenne.</p>
+        <Segmented value={period} onChange={onPeriod} options={PERIODS} />
+        <div>
+          <p className="text-3xl font-bold tabular-nums whitespace-nowrap">{formatCents(data.total)}</p>
+          <p className="text-sm text-slate-500">
+            {data.range.granularity === "day" ? `${formatCents(data.perDay)} par jour` : `${formatCents(Math.round(data.total / Math.max(1, data.points.length)))} par mois`}
+            {delta && <> · <span className={`font-semibold ${good ? "text-emerald-600" : "text-red-600"}`}>{delta} vs période précédente</span></>}
+          </p>
+        </div>
+        {isExpense ? <CumulativeCurve points={data.points} previous={data.previousPoints} /> : <Bars points={data.points} color="fill-[#1baf7a] dark:fill-[#199e70]" />}
+        <p className="text-xs text-slate-500">
+          {isExpense ? "Cumul depuis le début de la période, la période précédente en pointillé." : "Total de chaque jour ou de chaque mois selon la période."}
+        </p>
       </div>
-      <details className="card text-sm">
-        <summary className="cursor-pointer font-medium">Voir le tableau</summary>
-        <table className="mt-2 w-full">
-          <thead><tr className="text-left text-slate-500"><th>Mois</th><th className="text-right">Dépenses</th><th className="text-right">Revenus</th><th className="text-right">Reste</th></tr></thead>
-          <tbody>{[...pts].reverse().map((p) => <tr key={p.month}><td className="capitalize">{monthLabel(p.month)}</td><td className="text-right tabular-nums">{formatCents(p.expense)}</td><td className="text-right tabular-nums">{formatCents(p.income)}</td><td className={`text-right tabular-nums ${p.saved < 0 ? "text-red-600" : ""}`}>{formatCents(p.saved)}</td></tr>)}</tbody>
-        </table>
-      </details>
+      <CategoryList cats={data.byCategory} type={type} period={period} />
     </div>
   );
 }
 
-/* ---------- Vue 2 : mois en cours contre mois précédent, par catégorie ---------- */
-function CompareView({ data }: { data: Stats }) {
-  const rows = data.compare;
-  const max = Math.max(1, ...rows.map((r) => Math.max(r.current, r.previous)));
-  const prev = data.savings.previous, cur = data.savings.current;
+/* ---------- Dépenses évitables ---------- */
+function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod: (p: PeriodKey) => void }) {
+  const { data } = useQuery({ queryKey: ["avoidable", period], queryFn: () => api.get<AvoidableStats>(`/api/stats/avoidable?period=${period}`), placeholderData: (prev) => prev });
+  if (!data) return <p className="text-slate-500">Chargement…</p>;
+  const delta = pct(data.deltaPct);
   return (
-    <div className="space-y-3">
-      <div className="card space-y-1 text-sm">
-        <div className="flex justify-between"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#2a78d6] dark:bg-[#3987e5]" /><span className="capitalize">{monthLabel(cur.month)}</span></span><b>{formatCents(cur.expense)}</b></div>
-        <div className="flex justify-between"><span><i className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-[#eb6834] dark:bg-[#d95926]" /><span className="capitalize">{monthLabel(prev.month)}</span></span><b>{formatCents(prev.expense)}</b></div>
-        <div className={`flex justify-between font-semibold ${cur.expense - prev.expense > 0 ? "text-red-600" : "text-emerald-600"}`}>
-          <span>Écart</span><span>{cur.expense - prev.expense > 0 ? "+" : ""}{formatCents(cur.expense - prev.expense)}</span>
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-semibold">Dépenses évitables</h2>
+          <p className="text-xs text-slate-500">{data.byCategory.length ? data.byCategory.map((c) => c.name).join(", ") + " · " : ""}{rangeLabel(data.range)}</p>
         </div>
-      </div>
-      {rows.length === 0 && <p className="card text-sm text-slate-500">Pas encore de dépenses sur ces deux mois.</p>}
-      {rows.map((r) => (
-        <div key={r.categoryId} className="card space-y-1.5">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">{r.icon} {r.name}</span>
-            <span className={`text-xs font-semibold ${r.delta > 0 ? "text-red-600" : r.delta < 0 ? "text-emerald-600" : "text-slate-500"}`}>{r.delta > 0 ? "+" : ""}{formatCents(r.delta)}</span>
+        <Segmented value={period} onChange={onPeriod} options={PERIODS} />
+        <div>
+          <p className="text-3xl font-bold tabular-nums whitespace-nowrap">{formatCents(data.total)}</p>
+          <p className="text-sm text-slate-500">
+            {Math.round(data.shareOfExpenses * 100)} % des dépenses
+            {delta && <> · <span className={`font-semibold ${data.deltaPct! <= 0 ? "text-emerald-600" : "text-red-600"}`}>{delta} vs période précédente</span></>}
+          </p>
+        </div>
+        {data.avoidableIds.length === 0 ? (
+          <p className="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">Aucune catégorie n'est marquée « évitable ». Choisissez-les dans <Link to="/reglages/categories" className="font-semibold">Réglages → Catégories</Link>.</p>
+        ) : (
+          <Bars points={data.points} color="fill-[#eb6834] dark:fill-[#d95926]" />
+        )}
+        {data.goal && (
+          <div className="rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-200">
+            🎯 Objectif du coach : passer sous {formatCents(data.goal.target)} sur la prochaine période, soit {formatCents(data.goal.saving)} de plus{data.goal.projectName ? ` pour ${data.goal.projectName}` : " à mettre de côté"}.
           </div>
-          <Bar value={r.current} max={max} cls="bg-[#2a78d6] dark:bg-[#3987e5]" label={formatCents(r.current)} />
-          <Bar value={r.previous} max={max} cls="bg-[#eb6834] dark:bg-[#d95926]" label={formatCents(r.previous)} />
-        </div>
+        )}
+      </div>
+      <CategoryList cats={data.byCategory} type="expense" period={period} />
+      <p className="text-xs text-slate-500">Les catégories comptées comme évitables se choisissent dans <Link to="/reglages/categories" className="font-semibold text-brand">Réglages → Catégories</Link>.</p>
+    </div>
+  );
+}
+
+/* ---------- Composants ---------- */
+function CategoryList({ cats, type, period }: { cats: Cat[]; type: "expense" | "income"; period: PeriodKey }) {
+  const max = Math.max(1, ...cats.map((c) => c.total));
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Par catégorie sur la période</h2>
+      {cats.length === 0 && <p className="text-sm text-slate-500">Rien sur cette période.</p>}
+      {cats.map((c) => (
+        <Link key={c.categoryId} to={`/suivi/categorie/${c.categoryId}?type=${type}&p=${period}`} className="block space-y-1">
+          <div className="flex items-center justify-between text-sm">
+            <span>{c.icon} {c.name}</span>
+            <span className="flex items-center gap-2"><span className="font-semibold tabular-nums">{formatCents(c.total)}</span><span className="text-xs text-slate-500">{Math.round(c.share * 100)} %</span><span className="text-slate-400">›</span></span>
+          </div>
+          <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-slate-300 dark:bg-slate-600" style={{ width: `${Math.max(2, (c.total / max) * 100)}%` }} /></div>
+        </Link>
       ))}
+      {cats.length > 0 && <p className="text-xs text-slate-500">Touchez une catégorie pour voir ses opérations sur la période.</p>}
     </div>
   );
 }
 
-function Bar({ value, max, cls, label }: { value: number; max: number; cls: string; label: string }) {
+function axisLabels(points: Point[]): { i: number; text: string }[] {
+  if (points.length === 0) return [];
+  if (points[0].label.length === 7) return points.map((p, i) => ({ i, text: shortMonth(p.label) }));
+  const n = points.length;
+  const idx = n <= 7 ? points.map((_, i) => i) : [0, Math.round(n / 4), Math.round(n / 2), Math.round((3 * n) / 4), n - 1];
+  return idx.map((i) => ({ i, text: i === 0 || i === n - 1 ? frDate(points[i].date) : points[i].label.replace(/^0/, "") }));
+}
+
+function CumulativeCurve({ points, previous }: { points: Point[]; previous: Point[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 360, H = 130, padB = 18;
+  const n = Math.max(points.length, 2);
+  const max = Math.max(1, points[points.length - 1]?.cumulative ?? 0, previous[previous.length - 1]?.cumulative ?? 0);
+  const x = (i: number) => (i / (n - 1)) * W;
+  const y = (v: number) => H - padB - (v / max) * (H - padB - 10);
+  const path = (pts: Point[]) => pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.cumulative).toFixed(1)}`).join(" ");
+  const labels = axisLabels(points);
+  const sel = hover !== null ? points[hover] : null;
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-2.5 flex-1 rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full rounded-full ${cls}`} style={{ width: `${Math.max(value > 0 ? 2 : 0, (value / max) * 100)}%` }} /></div>
-      <span className="w-20 text-right text-xs tabular-nums text-slate-500">{label}</span>
+    <div className="space-y-1">
+      <div className="h-5 text-xs text-slate-600 dark:text-slate-300">
+        {sel ? <>{sel.label.length === 7 ? monthLabel(sel.label) : frDate(sel.date)} : <b>{formatCents(sel.cumulative)}</b> cumulés{sel.value > 0 && ` (+${formatCents(sel.value)})`}</> : <span className="text-slate-400">Touchez la courbe pour lire une valeur.</span>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Dépenses cumulées" onMouseLeave={() => setHover(null)}>
+        <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
+        <line x1={0} x2={W} y1={y(max / 2)} y2={y(max / 2)} className="stroke-slate-200 dark:stroke-slate-700" strokeWidth={1} />
+        {points.length > 1 && <path d={`${path(points)} L${x(points.length - 1).toFixed(1)} ${y(0)} L0 ${y(0)} Z`} className="fill-[#2a78d6] dark:fill-[#3987e5]" opacity={0.08} />}
+        {previous.length > 1 && <path d={path(previous)} fill="none" className="stroke-slate-400" strokeWidth={2} strokeDasharray="4 4" strokeLinecap="round" />}
+        {points.length > 1 && <path d={path(points)} fill="none" className="stroke-[#2a78d6] dark:stroke-[#3987e5]" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />}
+        {points.map((p, i) => (
+          <rect key={i} x={x(i) - W / n / 2} y={0} width={W / n} height={H - padB} fill="transparent" onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} onClick={() => setHover(i)} />
+        ))}
+        {points.length > 0 && <circle cx={x(sel ? hover! : points.length - 1)} cy={y((sel ?? points[points.length - 1]).cumulative)} r={5} className="fill-[#2a78d6] dark:fill-[#3987e5]" stroke="white" strokeWidth={2} />}
+        {labels.map((l) => <text key={l.i} x={x(l.i)} y={H - 4} textAnchor={l.i === 0 ? "start" : l.i === points.length - 1 ? "end" : "middle"} fontSize={10} className="fill-slate-500">{l.text}</text>)}
+      </svg>
+      <div className="flex gap-4 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5"><i className="inline-block h-0.5 w-3.5 rounded bg-[#2a78d6]" />Cette période</span>
+        <span className="flex items-center gap-1.5"><i className="inline-block w-3.5 border-t-2 border-dashed border-slate-400" />Période précédente</span>
+      </div>
     </div>
   );
 }
 
-/* ---------- Vue 3 : taux d'épargne ---------- */
-function SavingsView({ data }: { data: Stats }) {
-  const { current, previous, average6Rate, bestMonth } = data.savings;
-  const pct = (r: number | null) => (r === null ? "—" : `${Math.round(r * 100)} %`);
-  const pts = data.monthly;
-  const W = 360, H = 140, padL = 8, padB = 22, padT = 10;
-  const innerW = W - padL * 2, innerH = H - padB - padT;
-  const slot = innerW / pts.length;
-  const yRate = (r: number) => padT + innerH - Math.min(1, Math.max(0, r)) * innerH;
+function Bars({ points, color }: { points: Point[]; color: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 360, H = 140, padB = 18, padT = 14;
+  const n = Math.max(points.length, 1);
+  const max = Math.max(1, ...points.map((p) => p.value));
+  const slot = W / n, bw = Math.max(3, Math.min(40, slot * 0.6));
+  const y = (v: number) => padT + (H - padB - padT) - (v / max) * (H - padB - padT);
+  const labels = axisLabels(points);
+  const monthly = points[0]?.label.length === 7;
+  const sel = hover !== null ? points[hover] : null;
   return (
-    <div className="space-y-3">
-      <div className="card text-center">
-        <p className="text-sm text-slate-500">Taux d'épargne · <span className="capitalize">{monthLabel(current.month)}</span></p>
-        <p className={`my-1 text-5xl font-bold ${current.rate !== null && current.rate < 0 ? "text-red-600" : "text-emerald-600"}`}>{pct(current.rate)}</p>
-        <p className="text-sm text-slate-500">{current.income > 0 ? <><Money cents={current.saved} className="font-semibold" /> non dépensés sur <Money cents={current.income} /> de revenus</> : "Aucun revenu saisi ce mois-ci"}</p>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-center text-sm">
-        <div className="card p-3"><p className="text-xs text-slate-500">Mois précédent</p><p className="font-semibold">{pct(previous.rate)}</p></div>
-        <div className="card p-3"><p className="text-xs text-slate-500">Moyenne 6 mois</p><p className="font-semibold">{pct(average6Rate)}</p></div>
-        <div className="card p-3"><p className="text-xs text-slate-500">Meilleur mois</p><p className="font-semibold">{bestMonth ? `${pct(bestMonth.rate)} · ${short(bestMonth.month)}` : "—"}</p></div>
-      </div>
-      <div className="card space-y-2">
-        <p className="text-sm font-semibold">Sur 12 mois</p>
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Taux d'épargne sur 12 mois">
-          {[0, 0.25, 0.5, 1].map((f) => <line key={f} x1={padL} x2={W - padL} y1={yRate(f)} y2={yRate(f)} className={f === 0 ? "stroke-slate-300 dark:stroke-slate-600" : "stroke-slate-200 dark:stroke-slate-700"} strokeWidth={1} />)}
-          {pts.map((p, i) => {
-            const x = padL + i * slot + slot / 2;
-            const r = p.rate;
-            return (
-              <g key={p.month}>
-                {r !== null && <rect x={x - 5} y={yRate(Math.max(0, r))} width={10} height={Math.max(2, yRate(0) - yRate(Math.max(0, r)))} rx={2} className={r < 0 ? "fill-[#e34948] dark:fill-[#e66767]" : "fill-[#1baf7a] dark:fill-[#199e70]"} />}
-                {r !== null && <text x={x} y={yRate(Math.max(0, r)) - 3} textAnchor="middle" fontSize={9} className="fill-slate-500">{Math.round(r * 100)}</text>}
-                <text x={x} y={H - 6} textAnchor="middle" fontSize={10} className="fill-slate-500">{short(p.month)}</text>
-              </g>
-            );
-          })}
-        </svg>
-        <p className="text-xs text-slate-500">Part des revenus non dépensée chaque mois, en %. Un mois sans revenu saisi n'a pas de barre.</p>
-      </div>
+    <div className="space-y-1">
+      {!monthly && <div className="h-5 text-xs text-slate-600 dark:text-slate-300">{sel ? <>{frDate(sel.date)} : <b>{formatCents(sel.value)}</b></> : <span className="text-slate-400">Touchez une barre pour lire une valeur.</span>}</div>}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Montants par période" onMouseLeave={() => setHover(null)}>
+        <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
+        {points.map((p, i) => {
+          const bx = i * slot + (slot - bw) / 2;
+          return (
+            <g key={i} onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} onClick={() => setHover(i)}>
+              <rect x={i * slot} y={0} width={slot} height={H - padB} fill="transparent" />
+              {p.value > 0 && <rect x={bx} y={y(p.value)} width={bw} height={y(0) - y(p.value)} rx={2} className={color} opacity={hover === null || hover === i ? 1 : 0.5} />}
+              {monthly && p.value > 0 && <text x={bx + bw / 2} y={y(p.value) - 3} textAnchor="middle" fontSize={10} fontWeight={600} className="fill-slate-700 dark:fill-slate-200">{formatCents(p.value).replace(/,\d\d/, "")}</text>}
+            </g>
+          );
+        })}
+        {labels.map((l) => <text key={l.i} x={l.i * slot + slot / 2} y={H - 4} textAnchor="middle" fontSize={10} className="fill-slate-500">{l.text}</text>)}
+      </svg>
     </div>
   );
 }

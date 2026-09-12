@@ -7,7 +7,7 @@ import {
 import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
-import { useDeleteRule, useRules } from "@/lib/queries";
+import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
 import { formatCents } from "@shared/money";
 import { WALLET_TYPES, type Category, type Recurrence, type TxType, type Wallet, type WalletType } from "@shared/types";
 
@@ -134,7 +134,8 @@ function CategoriesSettings() {
   const { data: categories = [] } = useCategories();
   const save = useSaveCategory();
   const remove = useDeleteCategory();
-  const [form, setForm] = useState<{ id?: number; name: string; icon: string; parentId: number | null; kind: Category["kind"] } | null>(null);
+  const setAvoidable = useSetAvoidable();
+  const [form, setForm] = useState<{ id?: number; name: string; icon: string; parentId: number | null; kind: Category["kind"]; avoidable: boolean } | null>(null);
   const [reassign, setReassign] = useState<number | null>(null);
   const parents = categories.filter((c) => !c.parentId && !c.technicalKey);
 
@@ -144,22 +145,31 @@ function CategoriesSettings() {
       {parents.map((p) => (
         <div key={p.id} className="card space-y-2">
           <div className="flex items-center justify-between">
-            <button className="text-left font-semibold" onClick={() => setForm({ id: p.id, name: p.name, icon: p.icon ?? "", parentId: null, kind: p.kind })}>{p.icon} {p.name}</button>
-            <button className="text-sm text-brand" onClick={() => setForm({ name: "", icon: "", parentId: p.id, kind: p.kind })}>+ sous-catégorie</button>
+            <button className="text-left font-semibold" onClick={() => setForm({ id: p.id, name: p.name, icon: p.icon ?? "", parentId: null, kind: p.kind, avoidable: p.avoidable })}>{p.icon} {p.name}{p.avoidable && <span className="ml-1 text-xs text-orange-600">✂️</span>}</button>
+            <button className="text-sm text-brand" onClick={() => setForm({ name: "", icon: "", parentId: p.id, kind: p.kind, avoidable: false })}>+ sous-catégorie</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {categories.filter((c) => c.parentId === p.id).map((c) => (
-              <button key={c.id} className="chip bg-slate-100 dark:bg-slate-800" onClick={() => setForm({ id: c.id, name: c.name, icon: "", parentId: p.id, kind: c.kind })}>{c.name}</button>
+              <button key={c.id} className={`chip ${c.avoidable ? "bg-orange-50 text-orange-800 dark:bg-orange-950 dark:text-orange-200" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => setForm({ id: c.id, name: c.name, icon: "", parentId: p.id, kind: c.kind, avoidable: c.avoidable })}>{c.avoidable && "✂️ "}{c.name}</button>
             ))}
           </div>
         </div>
       ))}
-      <button className="btn-primary w-full" onClick={() => setForm({ name: "", icon: "", parentId: null, kind: "expense" })}>Nouvelle catégorie principale</button>
+      <p className="text-xs text-slate-500">✂️ = dépense évitable, comptée dans l'indicateur « Évitables » de l'onglet Suivi.</p>
+      <button className="btn-primary w-full" onClick={() => setForm({ name: "", icon: "", parentId: null, kind: "expense", avoidable: false })}>Nouvelle catégorie principale</button>
 
       <Sheet open={form !== null} onClose={() => setForm(null)} title={form?.id ? "Modifier" : "Nouvelle catégorie"}>
         {form && (
-          <form className="space-y-4" onSubmit={async (e) => { e.preventDefault(); await save.mutateAsync({ id: form.id, input: { name: form.name, icon: form.icon || null, parentId: form.parentId, kind: form.kind } }); setForm(null); }}>
+          <form className="space-y-4" onSubmit={async (e) => {
+            e.preventDefault();
+            const saved = await save.mutateAsync({ id: form.id, input: { name: form.name, icon: form.icon || null, parentId: form.parentId, kind: form.kind } });
+            if (saved.avoidable !== form.avoidable) await setAvoidable.mutateAsync({ id: saved.id, avoidable: form.avoidable });
+            setForm(null);
+          }}>
             <Field label="Nom"><input className="input" required autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+            {form.kind === "expense" && (
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.avoidable} onChange={(e) => setForm({ ...form, avoidable: e.target.checked })} /> Dépense évitable (restaurant, sorties, shopping…)</label>
+            )}
             {form.parentId === null && (
               <>
                 <Field label="Emoji (facultatif)"><input className="input" maxLength={4} value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} placeholder="🏠" /></Field>

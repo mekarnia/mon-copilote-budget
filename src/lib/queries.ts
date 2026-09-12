@@ -72,6 +72,7 @@ export const useAdjustWallet = () => useWrite(({ id, realBalance }: { id: number
 
 export const useSaveCategory = () =>
   useWrite(({ id, input }: { id?: number; input: CategoryInput }) => (id ? api.put<Category>(`/api/categories/${id}`, input) : api.post<Category>("/api/categories", input)));
+export const useSetAvoidable = () => useWrite(({ id, avoidable }: { id: number; avoidable: boolean }) => api.put<Category>(`/api/categories/${id}/avoidable`, { avoidable }));
 export const useDeleteCategory = () => useWrite(({ id, reassignTo }: { id: number; reassignTo: number | null }) => api.del(`/api/categories/${id}${reassignTo ? `?reassignTo=${reassignTo}` : ""}`));
 
 export const useSaveRecurrence = () =>

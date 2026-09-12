@@ -8,6 +8,7 @@ import { TransactionFormPage } from "./pages/TransactionForm";
 import { SettingsPage } from "./pages/Settings";
 import { CoachPage } from "./pages/Coach";
 import { SuiviPage } from "./pages/Suivi";
+import { SuiviCategoriePage } from "./pages/SuiviCategorie";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/projets" element={<ProjectsPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
+        <Route path="/suivi/categorie/:id" element={<SuiviCategoriePage />} />
         <Route path="/reglages/*" element={<SettingsPage />} />
       </Route>
       <Route path="/ajouter" element={<TransactionFormPage />} />

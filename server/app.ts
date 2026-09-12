@@ -24,6 +24,7 @@ import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
 import { suggestHabits } from "./services/habits.js";
 import { stats } from "./services/stats.js";
+import { avoidableStats, periodStats, PERIOD_KEYS, type PeriodKey } from "./services/periods.js";
 import { computeInsights } from "./services/insights.js";
 
 export interface AppOptions {
@@ -104,8 +105,12 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     const walletId = c.req.query("walletId");
     const status = c.req.query("status");
     const categoryId = c.req.query("categoryId");
+    const type = c.req.query("type");
     return c.json(tx.listTransactions(db, {
       categoryId: categoryId ? id(categoryId) : undefined,
+      from: c.req.query("from") || undefined,
+      to: c.req.query("to") || undefined,
+      type: type === "expense" || type === "income" || type === "transfer" ? type : undefined,
       status: status === "to_verify" || status === "confirmed" ? status : undefined,
       month: c.req.query("month") || undefined,
       q: c.req.query("q") || undefined,
@@ -223,6 +228,17 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
 
   // Suivi
   api.get("/stats", (c) => c.json(stats(db, c.req.query("month") || currentMonth())));
+  const periodOf = (v: string | undefined): PeriodKey => (PERIOD_KEYS.includes(v as PeriodKey) ? (v as PeriodKey) : "1m");
+  api.get("/stats/period", (c) => {
+    const type = c.req.query("type") === "income" ? "income" : "expense";
+    return c.json(periodStats(db, type, periodOf(c.req.query("period"))));
+  });
+  api.get("/stats/avoidable", (c) => c.json(avoidableStats(db, periodOf(c.req.query("period")))));
+  api.put("/categories/:id/avoidable", async (c) => {
+    const body = (await c.req.json()) as { avoidable?: boolean };
+    const r = categories.setAvoidable(db, id(c.req.param("id")), body.avoidable === true);
+    return r ? c.json(r) : c.json({ error: "Introuvable" }, 404);
+  });
 
   // Accueil
   api.get("/home", (c) => {

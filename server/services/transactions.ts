@@ -25,9 +25,17 @@ const map = (r: Row): Transaction => ({
   walletName: r.wallet_name, toWalletName: r.to_wallet_name,
 });
 
-export function listTransactions(db: DB, opts: { month?: string; q?: string; walletId?: number; limit?: number; status?: Transaction["status"]; categoryId?: number } = {}): Transaction[] {
+export function listTransactions(db: DB, opts: { month?: string; q?: string; walletId?: number; limit?: number; status?: Transaction["status"]; categoryId?: number; from?: string; to?: string; type?: Transaction["type"] } = {}): Transaction[] {
   const where: string[] = [];
   const params: (string | number)[] = [];
+  if (opts.from && opts.to) {
+    where.push("t.date BETWEEN ? AND ?");
+    params.push(opts.from, opts.to);
+  }
+  if (opts.type) {
+    where.push("t.type = ?");
+    params.push(opts.type);
+  }
   if (opts.categoryId) {
     where.push("(t.category_id = ? OR c.parent_id = ?)");
     params.push(opts.categoryId, opts.categoryId);
