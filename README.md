@@ -23,6 +23,18 @@ Sur Android, ouvrez l'adresse dans Chrome puis « Ajouter à l'écran d'accueil 
 
 Les données sont stockées dans `data/budget.sqlite` (ignoré par git). Les photos de tickets vont dans `data/uploads/`.
 
+## Sur le téléphone
+
+1. PC allumé avec l'application lancée, téléphone sur le même Wi‑Fi.
+2. Dans Chrome sur Android, ouvrez l'adresse « Network » affichée au démarrage, par exemple `http://192.168.1.20:5180` (ou `:3001` avec `demarrer.bat`).
+3. Menu ⋮ de Chrome → « Ajouter à l'écran d'accueil » ou « Installer l'application ».
+
+Si la page ne s'ouvre pas depuis le téléphone, autorisez Node.js dans le pare‑feu Windows pour les réseaux privés.
+
+## Lancement en un double‑clic (Windows)
+
+`demarrer.bat`, à la racine du projet, installe ce qui manque la première fois, prépare l'interface, puis lance l'application complète sur http://localhost:3001 et affiche l'adresse à utiliser depuis le téléphone. Pour qu'elle démarre avec Windows : touche Windows + R, tapez `shell:startup`, Entrée, puis placez un raccourci vers `demarrer.bat` dans le dossier qui s'ouvre.
+
 ## Version compilée (un seul processus)
 
 ```bash
