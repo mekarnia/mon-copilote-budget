@@ -30,7 +30,14 @@ export const useTransaction = (id: number | null) =>
   useQuery({ queryKey: ["transaction", id], queryFn: () => api.get<Transaction>(`/api/transactions/${id}`), enabled: id !== null });
 export const useLabels = (q: string) =>
   useQuery({ queryKey: ["labels", q], queryFn: () => api.get<LabelSuggestion[]>(`/api/transactions/labels?q=${encodeURIComponent(q)}`), enabled: q.length >= 2 });
-export const useBudgets = (month: string) => useQuery({ queryKey: ["budgets", month], queryFn: () => api.get<BudgetLine[]>(`/api/budgets?month=${month}`) });
+export interface BudgetSummary { month: string; budget: number; spent: number; saved: number; hasBudgets: boolean; previousMonthHasBudgets: boolean }
+export interface BudgetSuggestion { categoryId: number; categoryName: string; icon: string | null; previousBudget: number; lastSpent: number; average3: number; saved: number; suggested: number; reason: string }
+export const useBudgets = (month: string) =>
+  useQuery({ queryKey: ["budgets", month], queryFn: () => api.get<{ lines: BudgetLine[]; summary: BudgetSummary }>(`/api/budgets?month=${month}`) });
+export const useCopyBudgets = () => useWrite(({ from, to }: { from: string; to: string }) => api.post<{ copied: number }>("/api/budgets/copy", { from, to }));
+export const useSuggestBudgets = () =>
+  useMutation({ mutationFn: (month: string) => api.get<{ items: BudgetSuggestion[]; generatedBy: "ai" | "template" }>(`/api/budgets/suggest?month=${month}`) });
+export const useApplyBudgets = () => useWrite(({ month, items }: { month: string; items: { categoryId: number; amount: number }[] }) => api.post("/api/budgets/apply", { month, items }));
 export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
 export const useRecurrences = () => useQuery({ queryKey: ["recurrences"], queryFn: () => api.get<Recurrence[]>("/api/recurrences") });
 export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api.get<Record<string, string>>("/api/settings") });
@@ -71,7 +78,7 @@ export const useSaveRecurrence = () =>
   useWrite(({ id, input }: { id?: number; input: RecurrenceInput }) => (id ? api.put<Recurrence>(`/api/recurrences/${id}`, input) : api.post<Recurrence>("/api/recurrences", input)));
 export const useDeleteRecurrence = () => useWrite((id: number) => api.del(`/api/recurrences/${id}`));
 
-export const useSetBudget = () => useWrite(({ categoryId, amount }: { categoryId: number; amount: number }) => api.put("/api/budgets", { categoryId, amount }));
+export const useSetBudget = () => useWrite(({ categoryId, month, amount }: { categoryId: number; month: string; amount: number }) => api.put("/api/budgets", { categoryId, month, amount }));
 
 export const useSaveProject = () =>
   useWrite(({ id, input }: { id?: number; input: ProjectInput }) => (id ? api.put<Project>(`/api/projects/${id}`, input) : api.post<Project>("/api/projects", input)));

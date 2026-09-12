@@ -4,7 +4,13 @@ import type { Insight } from "@shared/types";
 
 const ICON: Record<Insight["severity"], string> = { warning: "⚠️", info: "💡", good: "🎉" };
 
-export function CoachCard() {
+/** Sur l'Accueil : un seul bouton vers le coach. */
+export function CoachButton() {
+  return <Link to="/coach" className="btn-ghost w-full">💬 Poser une question sur mes chiffres</Link>;
+}
+
+/** Dans la page du coach : le conseil de la semaine et ses constats. */
+export function WeeklyAdvicePanel() {
   const { data } = useWeeklyAdvice();
   const refresh = useRefreshAdvice();
   if (!data) return null;
@@ -28,7 +34,6 @@ export function CoachCard() {
           ))}
         </ul>
       )}
-      <Link to="/coach" className="btn-ghost w-full text-sm">💬 Poser une question sur mes chiffres</Link>
     </section>
   );
 }

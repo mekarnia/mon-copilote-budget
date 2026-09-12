@@ -125,7 +125,13 @@ export interface Recurrence extends RecurrenceInput {
 
 export const budgetInput = z.object({
   categoryId: z.number().int(),
+  month: z.string().regex(/^\d{4}-\d{2}$/),
   amount: z.number().int().min(0),
+});
+export const budgetCopyInput = z.object({ from: z.string().regex(/^\d{4}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}$/) });
+export const budgetApplyInput = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  items: z.array(z.object({ categoryId: z.number().int(), amount: z.number().int().min(0) })).max(50),
 });
 export type BudgetInput = z.infer<typeof budgetInput>;
 

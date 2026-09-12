@@ -21,7 +21,7 @@ describe("coach", () => {
 
   it("détecte une dérive de budget au rythme actuel", () => {
     const db = memDb();
-    setBudget(db, catId(db, "Courses"), 40000);
+    setBudget(db, catId(db, "Courses"), "2026-09", 40000);
     expense(db, 35000, "2026-09-10", "Supermarché"); // 350 € au 20 du mois -> projection 525 €
     const drift = computeInsights(db, TODAY).find((i) => i.kind === "budget_drift");
     expect(drift).toBeDefined();

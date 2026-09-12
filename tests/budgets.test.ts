@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { memDb, catId, walletId } from "./helpers.js";
 import { createTransaction } from "../server/services/transactions.js";
-import { budgetLines, setBudget, statusOf } from "../server/services/budgets.js";
+import { budgetLines, budgetSummary, copyBudgets, setBudget, statusOf, suggestBudgets } from "../server/services/budgets.js";
 import { createRecurrence } from "../server/services/recurrences.js";
 import { homeSummary } from "../server/services/home.js";
 import { createProject, contribute } from "../server/services/projects.js";
@@ -17,7 +17,7 @@ describe("budgets et accueil", () => {
   it("agrège les dépenses des sous-catégories sur la catégorie parente", () => {
     const db = memDb();
     const courant = walletId(db, "Compte courant");
-    setBudget(db, catId(db, "Courses"), 40000);
+    setBudget(db, catId(db, "Courses"), "2026-09", 40000);
     createTransaction(db, { type: "expense", amount: 25000, date: "2026-09-02", walletId: courant, toWalletId: null, categoryId: catId(db, "Supermarché"), projectId: null, label: "", note: "" });
     createTransaction(db, { type: "expense", amount: 9000, date: "2026-09-03", walletId: courant, toWalletId: null, categoryId: catId(db, "Boulangerie"), projectId: null, label: "", note: "" });
     const courses = budgetLines(db, "2026-09").find((b) => b.categoryName === "Courses")!;
@@ -67,5 +67,38 @@ describe("contexte d'une opération", () => {
     expect(ctx.parent).toMatchObject({ name: "Courses", total: 10850, count: 3 });
     expect(ctx.subs.map((x) => [x.name, x.total, x.count])).toEqual([["Supermarché", 10530, 2], ["Boulangerie", 320, 1]]);
     expect(ctx.currentId).toBe(catId(db, "Supermarché"));
+  });
+});
+
+describe("budgets par mois", () => {
+  it("un budget modifié en septembre ne touche pas octobre", () => {
+    const db = memDb();
+    const courses = catId(db, "Courses");
+    setBudget(db, courses, "2026-09", 40000);
+    setBudget(db, courses, "2026-10", 45000);
+    setBudget(db, courses, "2026-09", 30000);
+    expect(budgetLines(db, "2026-09").find((b) => b.categoryId === courses)!.amount).toBe(30000);
+    expect(budgetLines(db, "2026-10").find((b) => b.categoryId === courses)!.amount).toBe(45000);
+    expect(budgetLines(db, "2026-11").find((b) => b.categoryId === courses)!.amount).toBe(0);
+    expect(copyBudgets(db, "2026-10", "2026-11")).toBe(1);
+    expect(budgetLines(db, "2026-11").find((b) => b.categoryId === courses)!.amount).toBe(45000);
+  });
+
+  it("calcule les économies du mois et suggère le mois suivant d'après les dépenses", () => {
+    const db = memDb();
+    const courant = walletId(db, "Compte courant");
+    const courses = catId(db, "Courses"), sup = catId(db, "Supermarché");
+    setBudget(db, courses, "2026-09", 40000);
+    createTransaction(db, { type: "expense", amount: 25000, date: "2026-09-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    createTransaction(db, { type: "expense", amount: 31000, date: "2026-08-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    createTransaction(db, { type: "expense", amount: 28000, date: "2026-07-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    const summary = budgetSummary(db, "2026-09");
+    expect(summary.saved).toBe(15000);
+    const s = suggestBudgets(db, "2026-10").find((x) => x.categoryId === courses)!;
+    expect(s.saved).toBe(15000);
+    expect(s.average3).toBe(28000);
+    expect(s.suggested).toBeGreaterThanOrEqual(28000);
+    expect(s.suggested).toBeLessThan(40000);
+    expect(s.suggested % 1000).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useHome, useToVerifyCount } from "@/lib/queries";
 import { Money, ProgressBar, Empty } from "@/components/ui";
-import { CoachCard } from "@/components/CoachCard";
+import { CoachButton } from "@/components/CoachCard";
 import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
 
 export function HomePage() {
@@ -50,7 +50,7 @@ export function HomePage() {
         </Link>
       )}
 
-      <CoachCard />
+      <CoachButton />
 
       <section className="card space-y-3">
         {data.byCategory.length === 0 ? (

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChat, useClearChat, useSendChat } from "@/lib/queries";
 import { ErrorBanner } from "@/components/ui";
+import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
 const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre 300 € de vélo ?", "Où je dépense le plus ?", "Combien mettre de côté ce mois-ci ?"];
 
@@ -35,6 +36,7 @@ export function CoachPage() {
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">
+        {messages.length === 0 && <WeeklyAdvicePanel />}
         {messages.length === 0 && (
           <div className="space-y-3">
             <p className="text-sm text-slate-500">Posez une question sur vos propres chiffres. Réponse courte, avec un montant.</p>

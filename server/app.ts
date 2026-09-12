@@ -6,7 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 import type { DB } from "./db.js";
 import {
-  adjustInput, budgetInput, categoryInput, chatInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
+  adjustInput, budgetApplyInput, budgetCopyInput, budgetInput, categoryInput, chatInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
   transactionInput, walletInput, type CategorySuggestion, type ImportColumnMapping,
 } from "../shared/types.js";
 import { currentMonth, todayIso } from "../shared/dates.js";
@@ -182,12 +182,25 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.delete("/recurrences/:id", (c) => (rec.deleteRecurrence(db, id(c.req.param("id"))) ? c.json({ ok: true }) : c.json({ error: "Introuvable" }, 404)));
   api.post("/recurrences/run", (c) => c.json({ created: rec.runDueRecurrences(db) }));
 
-  // Budgets
-  api.get("/budgets", (c) => c.json(budgets.budgetLines(db, c.req.query("month") || currentMonth())));
+  // Budgets (propres à chaque mois)
+  api.get("/budgets", (c) => {
+    const month = c.req.query("month") || currentMonth();
+    return c.json({ lines: budgets.budgetLines(db, month), summary: budgets.budgetSummary(db, month) });
+  });
   api.put("/budgets", async (c) => {
     const b = parse(budgetInput, await c.req.json());
-    budgets.setBudget(db, b.categoryId, b.amount);
-    return c.json(budgets.budgetLines(db, c.req.query("month") || currentMonth()));
+    budgets.setBudget(db, b.categoryId, b.month, b.amount);
+    return c.json({ lines: budgets.budgetLines(db, b.month), summary: budgets.budgetSummary(db, b.month) });
+  });
+  api.post("/budgets/copy", async (c) => {
+    const b = parse(budgetCopyInput, await c.req.json());
+    return c.json({ copied: budgets.copyBudgets(db, b.from, b.to) });
+  });
+  api.get("/budgets/suggest", async (c) => c.json(await coach.suggestedBudgets(db, c.req.query("month") || currentMonth())));
+  api.post("/budgets/apply", async (c) => {
+    const b = parse(budgetApplyInput, await c.req.json());
+    budgets.applyBudgets(db, b.month, b.items);
+    return c.json({ lines: budgets.budgetLines(db, b.month), summary: budgets.budgetSummary(db, b.month) });
   });
 
   // Projets

@@ -57,8 +57,10 @@ CREATE TABLE IF NOT EXISTS recurrences (
   active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS budgets (
-  category_id INTEGER PRIMARY KEY REFERENCES categories(id) ON DELETE CASCADE,
-  amount INTEGER NOT NULL
+  category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  month TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  PRIMARY KEY (category_id, month)
 );
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +116,23 @@ const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
 ];
 
 function migrate(db: DB) {
+  // Budgets : passage d'un montant unique par catégorie à un montant par mois (MVC 3+).
+  const budgetCols = db.prepare("PRAGMA table_info(budgets)").all() as unknown as { name: string }[];
+  if (budgetCols.length > 0 && !budgetCols.some((c) => c.name === "month")) {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    db.exec(`
+      CREATE TABLE budgets_new (
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        month TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        PRIMARY KEY (category_id, month)
+      );
+      INSERT INTO budgets_new (category_id, month, amount) SELECT category_id, '${month}', amount FROM budgets;
+      DROP TABLE budgets;
+      ALTER TABLE budgets_new RENAME TO budgets;
+    `);
+  }
   for (const m of MIGRATIONS) {
     const cols = db.prepare(`PRAGMA table_info(${m.table})`).all() as unknown as { name: string }[];
     if (!cols.some((c) => c.name === m.column)) db.exec(m.ddl);

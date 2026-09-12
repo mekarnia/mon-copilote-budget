@@ -3,6 +3,9 @@ import type { ChatMessage, Insight, WeeklyAdvice } from "../../shared/types.js";
 import { isoWeek, todayIso } from "../../shared/dates.js";
 import { AiNotConfigured, getClient } from "./ai.js";
 import { computeInsights, contextSummary } from "./insights.js";
+import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { z } from "zod";
 
 const MODEL = "claude-opus-5";
 
@@ -105,3 +108,38 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
 }
 
 export { AiNotConfigured };
+
+// ---------- Budgets du mois prochain ----------
+
+const budgetSchema = z.object({
+  items: z.array(z.object({ category_id: z.number().int(), suggested_euros: z.number(), reason: z.string() })),
+});
+
+/** Suggestions pour `month` : calcul déterministe, affiné par l'IA quand une clé est présente. */
+export async function suggestedBudgets(db: DB, month: string): Promise<{ items: BudgetSuggestion[]; generatedBy: "ai" | "template" }> {
+  const base = suggestBudgets(db, month);
+  if (base.length === 0) return { items: base, generatedBy: "template" };
+  try {
+    const client = getClient(db);
+    const response = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 2000,
+      output_config: { effort: "low", format: zodOutputFormat(budgetSchema) },
+      system: `${TONE}\nTu proposes les budgets mensuels d'une famille pour le mois ${month}, catégorie par catégorie, à partir des dépenses réelles. Reste proche des montants calculés (écart maximal 20 %), arrondis à la dizaine d'euros, et justifie chaque montant en une phrase courte qui cite un chiffre. Ne crée pas de catégorie.`,
+      messages: [{ role: "user", content: JSON.stringify(base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_euros: b.previousBudget / 100, last_month_spent_euros: b.lastSpent / 100, average_3_months_euros: b.average3 / 100, saved_last_month_euros: b.saved / 100, computed_suggestion_euros: b.suggested / 100 }))) }],
+    });
+    const parsed = response.parsed_output;
+    if (!parsed) return { items: base, generatedBy: "template" };
+    const byId = new Map(parsed.items.map((i) => [i.category_id, i]));
+    const items = base.map((b) => {
+      const ai = byId.get(b.categoryId);
+      if (!ai || !(ai.suggested_euros > 0)) return b;
+      const cents = Math.round(ai.suggested_euros * 100);
+      const bounded = Math.min(Math.round(b.suggested * 1.2), Math.max(Math.round(b.suggested * 0.8), cents));
+      return { ...b, suggested: Math.ceil(bounded / 1000) * 1000, reason: ai.reason.trim() || b.reason };
+    });
+    return { items, generatedBy: "ai" };
+  } catch {
+    return { items: base, generatedBy: "template" };
+  }
+}
