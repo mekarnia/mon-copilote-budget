@@ -46,6 +46,10 @@ Le serveur sert alors l'interface et l'API sur http://localhost:3001.
 
 Variables d'environnement optionnelles : `PORT` (défaut 3001), `BUDGET_DATA_DIR` (défaut `data`).
 
+## Le port est déjà utilisé
+
+`EADDRINUSE` sur le port 3001 signifie qu'une autre copie de l'application tourne déjà : le navigateur parlerait alors à l'ancienne version. Fermez les autres fenêtres qui la font tourner, ou `taskkill /F /IM node.exe` sous Windows (`pkill -f "server/index.ts"` ailleurs), puis relancez.
+
 ## Vérifier
 
 ```bash

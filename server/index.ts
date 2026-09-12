@@ -14,6 +14,18 @@ const app = createApp({ db, uploadsDir: path.join(dataDir, "uploads"), distDir: 
 runDueRecurrences(db);
 setInterval(() => runDueRecurrences(db), 60 * 60 * 1000);
 
-serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, () => {
+const server = serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, () => {
   console.log(`Mon copilote budget : API sur http://localhost:${port} (données dans ${dataDir})`);
+});
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`\nLe port ${port} est déjà utilisé : une autre copie de l'application tourne déjà.`);
+    console.error("Fermez les autres fenêtres qui la font tourner, ou arrêtez-les toutes :");
+    console.error("  Windows : taskkill /F /IM node.exe");
+    console.error("  macOS / Linux : pkill -f \"server/index.ts\"");
+    console.error(`Vous pouvez aussi choisir un autre port : set PORT=3002 puis relancer.\n`);
+    process.exit(1);
+  }
+  throw err;
 });
