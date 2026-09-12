@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useHabits, useLabels, useParseSpeech,
-  useRemovePhoto, useSaveTransaction, useTransaction, useTransactionContext, useUploadPhoto, useWallets,
+  useRemovePhoto, useSaveTransaction, useTransaction, useCategoryContext, useUploadPhoto, useWallets,
 } from "@/lib/queries";
 import { Link } from "react-router-dom";
-import { monthLabel } from "@shared/dates";
+import { monthLabel, monthOf } from "@shared/dates";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
 import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -29,7 +29,6 @@ export function TransactionFormPage() {
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const { data: existing } = useTransaction(editId);
-  const { data: context } = useTransactionContext(editId);
   const { data: wallets = [] } = useWallets();
   const { data: categories = [] } = useCategories();
   const save = useSaveTransaction();
@@ -57,6 +56,7 @@ export function TransactionFormPage() {
   const [labelFocused, setLabelFocused] = useState(false);
   const { data: suggestions = [] } = useLabels(labelFocused ? label : "");
   const { data: habits = [] } = useHabits(type, categoryId, amount);
+  const { data: context } = useCategoryContext(categoryId, monthOf(date), type);
   const visibleHabits = editId ? [] : habits.filter((h) => h.label !== label);
 
   // MVC 2 : brouillon IA, dictée, catégorie proposée
@@ -228,23 +228,6 @@ export function TransactionFormPage() {
           <button type="button" className="rounded-lg bg-amber-600 px-3 py-1 font-semibold text-white" onClick={async () => { await confirmTx.mutateAsync(existing!.id); navigate(-1); }}>C'est bon</button>
         </div>
       )}
-      {editId && context?.parent && (
-        <div className="card mb-4 space-y-2 text-sm">
-          <p className="text-slate-500">
-            {existing?.type === "income" ? "Reçu" : "Dépensé"} en {monthLabel(context.month!)}
-          </p>
-          {context.sub && (
-            <Link to={`/operations?categoryId=${context.sub.id}&month=${context.month}`} className="flex items-center justify-between">
-              <span>{context.sub.name} <span className="text-slate-500">· {context.sub.count} opération{context.sub.count > 1 ? "s" : ""}</span></span>
-              <span className="font-semibold">{formatCents(context.sub.total)} ›</span>
-            </Link>
-          )}
-          <Link to={`/operations?categoryId=${context.parent.id}&month=${context.month}`} className="flex items-center justify-between">
-            <span>{context.parent.icon} {context.parent.name} <span className="text-slate-500">· {context.parent.count} opération{context.parent.count > 1 ? "s" : ""}</span></span>
-            <span className="font-semibold">{formatCents(context.parent.total)} ›</span>
-          </Link>
-        </div>
-      )}
       {isAdjustment && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800">Correction de solde automatique. Vous pouvez la supprimer si elle est erronée.</p>}
 
       <form onSubmit={submit} className="mt-2 space-y-5">
@@ -272,30 +255,6 @@ export function TransactionFormPage() {
           </Field>
         )}
 
-        {visibleHabits.length > 0 && (
-          <div>
-            <span className="label">Vos habitudes</span>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {visibleHabits.map((h) => (
-                <button
-                  key={h.label}
-                  type="button"
-                  className="chip shrink-0 bg-brand/10 text-left"
-                  onClick={() => {
-                    setLabel(h.label);
-                    if (amount === null) setAmount(h.typicalAmount);
-                    if (h.categoryId && categories.some((c) => c.id === h.categoryId)) { setCategoryId(h.categoryId); setSuggested("rule"); }
-                    if (wallets.some((w) => w.id === h.walletId)) setWalletId(h.walletId);
-                    if (h.paymentMethod) setPaymentMethod(h.paymentMethod);
-                  }}
-                >
-                  {h.label} <span className="text-slate-500">· {formatCents(h.typicalAmount)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-3">
           <Field label={type === "transfer" ? "Depuis" : "Portefeuille"}>
             <select className="input" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value))}>
@@ -320,6 +279,46 @@ export function TransactionFormPage() {
           </div>
         ) : (
           <Field label="Heure"><input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+        )}
+
+        {type !== "transfer" && !isAdjustment && context?.parent && (context.parent.count > 0 || context.sub) && (
+          <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">
+            <p className="mb-1 text-xs text-slate-500">{type === "income" ? "Reçu" : "Dépensé"} en {monthLabel(context.month!)}</p>
+            {context.sub && (
+              <Link to={`/operations?categoryId=${context.sub.id}&month=${context.month}`} className="flex items-center justify-between py-0.5">
+                <span>{context.sub.name} <span className="text-slate-500">· {context.sub.count} op.</span></span>
+                <span className="font-semibold">{formatCents(context.sub.total)} ›</span>
+              </Link>
+            )}
+            <Link to={`/operations?categoryId=${context.parent.id}&month=${context.month}`} className="flex items-center justify-between py-0.5">
+              <span>{context.parent.icon} {context.parent.name} <span className="text-slate-500">· {context.parent.count} op.</span></span>
+              <span className="font-semibold">{formatCents(context.parent.total)} ›</span>
+            </Link>
+          </div>
+        )}
+
+        {visibleHabits.length > 0 && (
+          <div>
+            <span className="label">Vos habitudes</span>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {visibleHabits.map((h) => (
+                <button
+                  key={h.label}
+                  type="button"
+                  className="chip shrink-0 bg-brand/10 text-left"
+                  onClick={() => {
+                    setLabel(h.label);
+                    if (amount === null) setAmount(h.typicalAmount);
+                    if (h.categoryId && categories.some((c) => c.id === h.categoryId)) { setCategoryId(h.categoryId); setSuggested("rule"); }
+                    if (wallets.some((w) => w.id === h.walletId)) setWalletId(h.walletId);
+                    if (h.paymentMethod) setPaymentMethod(h.paymentMethod);
+                  }}
+                >
+                  {h.label} <span className="text-slate-500">· {formatCents(h.typicalAmount)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {!isAdjustment && (

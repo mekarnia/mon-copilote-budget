@@ -24,10 +24,18 @@ describe("habitudes", () => {
     const { db, resto } = seed();
     const s = suggestHabits(db, { type: "expense", categoryId: resto, today: TODAY });
     expect(s.slice(0, 2).map((x) => x.label)).toEqual(["Pizza Roma", "Le Bistrot"]);
-    expect(s.map((x) => x.label)).not.toContain("Sushi Bar"); // vu une seule fois
+    expect(s.map((x) => x.label)).not.toContain("Sushi Bar"); // vu une seule fois, il y a longtemps
     expect(s).toHaveLength(5); // jamais plus de 5
     expect(s[0].typicalAmount).toBe(1800);
     expect(s[0].count).toBe(3);
+  });
+
+  it("propose un achat unique s'il est récent, après les vraies habitudes", () => {
+    const { db, resto } = seed();
+    createTransaction(db, { type: "expense", amount: 2500, date: "2026-09-11", walletId: walletId(db, "Compte courant"), toWalletId: null, categoryId: resto, projectId: null, label: "Nouveau Kebab", note: "" }, { learn: false });
+    const labels = suggestHabits(db, { type: "expense", categoryId: resto, today: TODAY, limit: 10 }).map((x) => x.label);
+    expect(labels.slice(0, 2)).toEqual(["Pizza Roma", "Le Bistrot"]);
+    expect(labels).toContain("Nouveau Kebab");
   });
 
   it("fait remonter le libellé dont le montant habituel est proche du montant saisi", () => {

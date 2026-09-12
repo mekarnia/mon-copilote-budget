@@ -22,8 +22,13 @@ export interface CategoryContext {
   sub: { id: number; name: string; total: number; count: number } | null;
   parent: { id: number; name: string; icon: string | null; total: number; count: number } | null;
 }
-export const useTransactionContext = (id: number | null) =>
-  useQuery({ queryKey: ["transactionContext", id], queryFn: () => api.get<CategoryContext>(`/api/transactions/${id}/context`), enabled: id !== null });
+export const useCategoryContext = (categoryId: number | null, month: string, type: TxType) =>
+  useQuery({
+    queryKey: ["categoryContext", categoryId, month, type],
+    queryFn: () => api.get<CategoryContext>(`/api/categories/${categoryId}/context?month=${month}&type=${type}`),
+    enabled: categoryId !== null && type !== "transfer",
+    placeholderData: (prev) => prev,
+  });
 export const useToVerifyCount = () => useQuery({ queryKey: ["toVerifyCount"], queryFn: () => api.get<{ count: number }>("/api/transactions/to-verify-count") });
 export const useTransaction = (id: number | null) =>
   useQuery({ queryKey: ["transaction", id], queryFn: () => api.get<Transaction>(`/api/transactions/${id}`), enabled: id !== null });

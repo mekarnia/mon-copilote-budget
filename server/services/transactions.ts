@@ -135,24 +135,29 @@ export interface CategoryContext {
   parent: { id: number; name: string; icon: string | null; total: number; count: number } | null;
 }
 
-/** Totaux du mois de l'opération pour sa sous-catégorie et sa catégorie parente (même type : dépense ou revenu). */
-export function transactionContext(db: DB, id: number): CategoryContext | null {
-  const t = getTransaction(db, id);
-  if (!t || t.technical || !t.categoryId) return null;
-  const { start, end } = monthBounds(monthOf(t.date));
-  const cat = db.prepare("SELECT id, name, parent_id, icon FROM categories WHERE id = ?").get(t.categoryId) as { id: number; name: string; parent_id: number | null; icon: string | null } | undefined;
-  if (!cat) return null;
-  const sum = (categoryId: number, withChildren: boolean) =>
+/** Totaux d'un mois pour une sous-catégorie et sa catégorie parente, pour un type donné (dépense ou revenu). */
+export function categoryContext(db: DB, categoryId: number, month: string, type: "expense" | "income"): CategoryContext | null {
+  const { start, end } = monthBounds(month);
+  const cat = db.prepare("SELECT id, name, parent_id, icon, technical_key FROM categories WHERE id = ?").get(categoryId) as { id: number; name: string; parent_id: number | null; icon: string | null; technical_key: string | null } | undefined;
+  if (!cat || cat.technical_key) return null;
+  const sum = (id: number, withChildren: boolean) =>
     db.prepare(`SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count FROM transactions t JOIN categories c ON c.id = t.category_id
       WHERE t.type = ? AND t.date BETWEEN ? AND ? AND ${withChildren ? "(t.category_id = ? OR c.parent_id = ?)" : "t.category_id = ?"}`)
-      .get(...(withChildren ? [t.type, start, end, categoryId, categoryId] : [t.type, start, end, categoryId])) as { total: number; count: number };
+      .get(...(withChildren ? [type, start, end, id, id] : [type, start, end, id])) as { total: number; count: number };
   const parentId = cat.parent_id ?? cat.id;
   const parent = db.prepare("SELECT id, name, icon FROM categories WHERE id = ?").get(parentId) as { id: number; name: string; icon: string | null };
   const parentTotals = sum(parent.id, true);
   const subTotals = cat.parent_id ? sum(cat.id, false) : null;
   return {
-    month: monthOf(t.date),
+    month,
     sub: cat.parent_id && subTotals ? { id: cat.id, name: cat.name, total: subTotals.total, count: subTotals.count } : null,
     parent: { id: parent.id, name: parent.name, icon: parent.icon, total: parentTotals.total, count: parentTotals.count },
   };
+}
+
+/** Même chose, à partir d'une opération existante (son mois, son type, sa catégorie). */
+export function transactionContext(db: DB, id: number): CategoryContext | null {
+  const t = getTransaction(db, id);
+  if (!t || t.technical || !t.categoryId || t.type === "transfer") return null;
+  return categoryContext(db, t.categoryId, monthOf(t.date), t.type);
 }
