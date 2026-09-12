@@ -51,6 +51,7 @@ export function suggestHabits(
   const todayMs = Date.UTC(y, m - 1, d);
   const out: HabitSuggestion[] = [];
   for (const items of groups.values()) {
+    if (items.length < 2) continue; // une habitude, c'est un libellé revu au moins deux fois
     const last = items[0];
     const [ly, lm, ld] = last.date.split("-").map(Number);
     const days = Math.max(0, (todayMs - Date.UTC(ly, lm - 1, ld)) / 86400000);
@@ -74,5 +75,5 @@ export function suggestHabits(
       score,
     });
   }
-  return out.sort((a, b) => b.score - a.score).slice(0, opts.limit ?? 6);
+  return out.sort((a, b) => b.score - a.score).slice(0, opts.limit ?? 5);
 }

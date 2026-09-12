@@ -15,14 +15,17 @@ describe("habitudes", () => {
     add("Pizza Roma", 1800, "2026-09-05", resto); add("Pizza Roma", 1950, "2026-08-20", resto); add("Pizza Roma", 1700, "2026-07-30", resto);
     add("Le Bistrot", 3200, "2026-09-10", resto); add("Le Bistrot", 3500, "2026-06-01", resto);
     add("Sushi Bar", 4500, "2026-01-10", resto);
-    add("Boulangerie du coin", 320, "2026-09-11", boulangerie, especes, "cash");
+    add("Boulangerie du coin", 320, "2026-09-11", boulangerie, especes, "cash"); add("Boulangerie du coin", 310, "2026-09-04", boulangerie, especes, "cash");
+    for (let i = 0; i < 8; i++) { add(`Resto ${i}`, 2000 + i, "2026-08-01", resto); add(`Resto ${i}`, 2000 + i, "2026-07-01", resto); }
     return { db, resto, boulangerie, especes };
   }
 
   it("propose les restaurants habituels pour la catégorie, les plus fréquents et récents d'abord", () => {
     const { db, resto } = seed();
     const s = suggestHabits(db, { type: "expense", categoryId: resto, today: TODAY });
-    expect(s.map((x) => x.label)).toEqual(["Pizza Roma", "Le Bistrot", "Sushi Bar"]);
+    expect(s.slice(0, 2).map((x) => x.label)).toEqual(["Pizza Roma", "Le Bistrot"]);
+    expect(s.map((x) => x.label)).not.toContain("Sushi Bar"); // vu une seule fois
+    expect(s).toHaveLength(5); // jamais plus de 5
     expect(s[0].typicalAmount).toBe(1800);
     expect(s[0].count).toBe(3);
   });
