@@ -307,3 +307,15 @@ export interface ChatMessage {
 }
 
 export const chatInput = z.object({ message: z.string().trim().min(1).max(1000) });
+
+/** Une habitude de l'utilisateur : libellé récurrent avec son montant type et son contexte habituel. */
+export interface HabitSuggestion {
+  label: string;
+  count: number;
+  typicalAmount: number;
+  lastDate: string;
+  categoryId: number | null;
+  walletId: number;
+  paymentMethod: PaymentMethod | null;
+  score: number;
+}

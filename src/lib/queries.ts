@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import type {
   BudgetLine, Category, CategoryInput, CategorySuggestion, HomeSummary, ImportBatch, ImportColumnMapping, ImportCommitInput,
-  ChatMessage, ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft, WeeklyAdvice,
-  TransactionInput, TxStatus, Wallet, WalletInput,
+  ChatMessage, HabitSuggestion, ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft, WeeklyAdvice,
+  TransactionInput, TxStatus, TxType, Wallet, WalletInput,
 } from "@shared/types";
 
 export const useWallets = (all = false) => useQuery({ queryKey: ["wallets", all], queryFn: () => api.get<Wallet[]>(`/api/wallets${all ? "?all=1" : ""}`) });
@@ -107,3 +107,12 @@ export const useRefreshAdvice = () => useWrite(() => api.get<WeeklyAdvice>("/api
 export const useChat = () => useQuery({ queryKey: ["chat"], queryFn: () => api.get<ChatMessage[]>("/api/coach/chat") });
 export const useSendChat = () => useWrite((message: string) => api.post<ChatMessage>("/api/coach/chat", { message }));
 export const useClearChat = () => useWrite(() => api.del("/api/coach/chat"));
+
+// ---- Habitudes ----
+export const useHabits = (type: TxType, categoryId: number | null, amount: number | null) =>
+  useQuery({
+    queryKey: ["habits", type, categoryId, amount],
+    queryFn: () => api.get<HabitSuggestion[]>(`/api/transactions/habits?type=${type}&categoryId=${categoryId ?? ""}&amount=${amount ?? ""}`),
+    enabled: type !== "transfer" && (categoryId !== null || (amount !== null && amount > 0)),
+    placeholderData: (prev) => prev,
+  });

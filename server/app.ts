@@ -22,6 +22,7 @@ import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory } from ".
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
+import { suggestHabits } from "./services/habits.js";
 import { computeInsights } from "./services/insights.js";
 
 export interface AppOptions {
@@ -105,6 +106,13 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     }));
   });
   api.get("/transactions/labels", (c) => c.json(tx.suggestLabels(db, c.req.query("q") ?? "")));
+  api.get("/transactions/habits", (c) => {
+    const type = c.req.query("type");
+    if (type !== "expense" && type !== "income") return c.json([]);
+    const categoryId = c.req.query("categoryId");
+    const amount = c.req.query("amount");
+    return c.json(suggestHabits(db, { type, categoryId: categoryId ? id(categoryId) : null, amount: amount ? Number(amount) : null }));
+  });
   api.get("/transactions/to-verify-count", (c) => c.json({ count: tx.countToVerify(db) }));
   api.post("/transactions/:id/confirm", (c) => {
     const t = tx.confirmTransaction(db, id(c.req.param("id")));

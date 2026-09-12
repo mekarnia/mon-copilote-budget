@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useLabels, useParseSpeech,
+  categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useHabits, useLabels, useParseSpeech,
   useRemovePhoto, useSaveTransaction, useTransaction, useUploadPhoto, useWallets,
 } from "@/lib/queries";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
@@ -53,6 +53,8 @@ export function TransactionFormPage() {
   const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
   const [labelFocused, setLabelFocused] = useState(false);
   const { data: suggestions = [] } = useLabels(labelFocused ? label : "");
+  const { data: habits = [] } = useHabits(type, categoryId, amount);
+  const visibleHabits = editId ? [] : habits.filter((h) => h.label !== label);
 
   // MVC 2 : brouillon IA, dictée, catégorie proposée
   const [draftInfo, setDraftInfo] = useState<{ source: "photo" | "voice"; question: string | null } | null>(null);
@@ -248,6 +250,30 @@ export function TransactionFormPage() {
           <Field label={suggested ? `Catégorie (${suggested === "rule" ? "d'après vos habitudes" : "proposée par l'IA"})` : "Catégorie"}>
             <CategoryPicker categories={categories} type={type} value={categoryId} onChange={(id) => { setCategoryId(id); setSuggested(null); }} />
           </Field>
+        )}
+
+        {visibleHabits.length > 0 && (
+          <div>
+            <span className="label">Vos habitudes</span>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {visibleHabits.map((h) => (
+                <button
+                  key={h.label}
+                  type="button"
+                  className="chip shrink-0 bg-brand/10 text-left"
+                  onClick={() => {
+                    setLabel(h.label);
+                    if (amount === null) setAmount(h.typicalAmount);
+                    if (h.categoryId && categories.some((c) => c.id === h.categoryId)) { setCategoryId(h.categoryId); setSuggested("rule"); }
+                    if (wallets.some((w) => w.id === h.walletId)) setWalletId(h.walletId);
+                    if (h.paymentMethod) setPaymentMethod(h.paymentMethod);
+                  }}
+                >
+                  {h.label} <span className="text-slate-500">· {formatCents(h.typicalAmount)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="grid grid-cols-2 gap-3">
