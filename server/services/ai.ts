@@ -30,6 +30,7 @@ const draftSchema = z.object({
   category_id: z.number().int().nullable(),
   wallet_id: z.number().int().nullable(),
   to_wallet_id: z.number().int().nullable(),
+  payment_method: z.enum(["card", "cash"]).nullable(),
   question: z.string().nullable(),
 });
 
@@ -50,6 +51,7 @@ function system(db: DB, today: string): string {
 Aujourd'hui : ${today} (format AAAA-MM-JJ). Résous les dates relatives (hier, ce matin, lundi dernier, le 5) par rapport à cette date. Si aucune date n'est mentionnée, mets la date du jour.
 Le montant est en euros, positif. Le type est "expense" (dépense), "income" (revenu) ou "transfer" (virement entre deux portefeuilles).
 Le libellé est court : le nom du commerçant ou l'objet de l'opération, sans montant ni date.
+Le moyen de paiement est "cash" si la phrase parle d'espèces, de liquide ou de cash, "card" si elle parle de carte ou CB, sinon null. Pour un paiement en espèces, choisis le portefeuille de type "especes" s'il existe.
 Si un élément essentiel est réellement ambigu (montant illisible, catégorie impossible à deviner), pose une seule question courte en français dans "question", sinon mets null.
 Ne pose pas de question pour un choix raisonnable : choisis la sous-catégorie la plus probable.
 ${catalogue(listCategories(db), listWallets(db))}`;
@@ -65,6 +67,7 @@ function toDraft(p: z.infer<typeof draftSchema>, source: TransactionDraft["sourc
     categoryId: p.category_id,
     walletId: p.wallet_id,
     toWalletId: p.to_wallet_id,
+    paymentMethod: p.payment_method,
     question: p.question?.trim() || null,
     source,
   };

@@ -9,7 +9,12 @@ import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { todayIso } from "@shared/dates";
 import { formatCents } from "@shared/money";
-import type { TransactionDraft, TxType } from "@shared/types";
+import { PAYMENT_LABEL, PAYMENT_METHODS, type PaymentMethod, type TransactionDraft, type TxType } from "@shared/types";
+
+const nowTime = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 const TYPE_OPTIONS: { value: TxType; label: string }[] = [
   { value: "expense", label: "Dépense" },
@@ -37,6 +42,8 @@ export function TransactionFormPage() {
   const [type, setType] = useState<TxType>("expense");
   const [amount, setAmount] = useState<number | null>(null);
   const [date, setDate] = useState(todayIso());
+  const [time, setTime] = useState(nowTime());
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>("card");
   const [walletId, setWalletId] = useState<number | null>(null);
   const [toWalletId, setToWalletId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
@@ -67,6 +74,8 @@ export function TransactionFormPage() {
     setType(existing.type);
     setAmount(existing.amount);
     setDate(existing.date);
+    setTime(existing.time ?? "");
+    setPaymentMethod(existing.paymentMethod ?? null);
     setWalletId(existing.walletId);
     setToWalletId(existing.toWalletId);
     setCategoryId(existing.technical ? null : existing.categoryId);
@@ -81,11 +90,19 @@ export function TransactionFormPage() {
     if (d.type) setType(d.type);
     if (d.amount) setAmount(d.amount);
     if (d.date) setDate(d.date);
+    if (d.paymentMethod) choosePayment(d.paymentMethod);
     if (d.walletId && wallets.some((w) => w.id === d.walletId)) setWalletId(d.walletId);
     if (d.toWalletId) setToWalletId(d.toWalletId);
     if (d.categoryId && categories.some((c) => c.id === d.categoryId)) setCategoryId(d.categoryId);
     setLabel(d.label);
     setDraftInfo({ source: d.source, question: d.question });
+  }
+
+  /** Espèces -> portefeuille de type espèces ; Carte -> compte courant, si ces portefeuilles existent. */
+  function choosePayment(m: PaymentMethod) {
+    setPaymentMethod(m);
+    const target = wallets.find((w) => (m === "cash" ? w.type === "especes" : w.type === "courant"));
+    if (target) setWalletId(target.id);
   }
 
   async function onReceipt(file: File) {
@@ -142,7 +159,10 @@ export function TransactionFormPage() {
     if (!canSave || amount === null || walletId === null) return;
     const saved = await save.mutateAsync({
       id: editId ?? undefined,
-      input: { type, amount, date, walletId, toWalletId: type === "transfer" ? toWalletId : null, categoryId: type === "transfer" ? null : categoryId, projectId: existing?.projectId ?? null, label, note },
+      input: {
+        type, amount, date, walletId, toWalletId: type === "transfer" ? toWalletId : null, categoryId: type === "transfer" ? null : categoryId,
+        projectId: existing?.projectId ?? null, label, note, paymentMethod: type === "transfer" ? null : paymentMethod, time: time || null,
+      },
     });
     if (pendingPhoto) await upload.mutateAsync({ id: saved.id, file: pendingPhoto });
     navigate(-1);
@@ -210,6 +230,21 @@ export function TransactionFormPage() {
         <MoneyInput value={amount} onChange={setAmount} autoFocus={!editId} />
 
         {type !== "transfer" && !isAdjustment && (
+          <div className="grid grid-cols-2 gap-2">
+            {PAYMENT_METHODS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => choosePayment(m)}
+                className={`btn ${paymentMethod === m ? "bg-brand text-white" : "btn-ghost"}`}
+              >
+                {m === "card" ? "💳" : "💵"} {PAYMENT_LABEL[m]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {type !== "transfer" && !isAdjustment && (
           <Field label={suggested ? `Catégorie (${suggested === "rule" ? "d'après vos habitudes" : "proposée par l'IA"})` : "Catégorie"}>
             <CategoryPicker categories={categories} type={type} value={categoryId} onChange={(id) => { setCategoryId(id); setSuggested(null); }} />
           </Field>
@@ -232,7 +267,14 @@ export function TransactionFormPage() {
             <Field label="Date"><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
           )}
         </div>
-        {type === "transfer" && <Field label="Date"><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>}
+        {type === "transfer" ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date"><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} required /></Field>
+            <Field label="Heure"><input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+          </div>
+        ) : (
+          <Field label="Heure"><input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+        )}
 
         {!isAdjustment && (
           <Field label="Libellé (facultatif)">
@@ -245,7 +287,7 @@ export function TransactionFormPage() {
                     <li key={s.label}>
                       <button type="button" className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
                         onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => { setLabel(s.label); if (s.type === type && s.categoryId) setCategoryId(s.categoryId); setWalletId(s.walletId); setLabelFocused(false); }}>
+                        onClick={() => { setLabel(s.label); if (s.type === type && s.categoryId) setCategoryId(s.categoryId); setWalletId(s.walletId); if (s.paymentMethod) setPaymentMethod(s.paymentMethod); setLabelFocused(false); }}>
                         {s.label}
                       </button>
                     </li>

@@ -10,6 +10,10 @@ export type TxType = (typeof TX_TYPES)[number];
 export const CATEGORY_KINDS = ["expense", "income", "technical"] as const;
 export type CategoryKind = (typeof CATEGORY_KINDS)[number];
 
+export const PAYMENT_METHODS = ["card", "cash"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export const PAYMENT_LABEL: Record<PaymentMethod, string> = { card: "Carte", cash: "Espèces" };
+
 export const FREQUENCIES = ["monthly", "weekly"] as const;
 export type Frequency = (typeof FREQUENCIES)[number];
 
@@ -59,6 +63,8 @@ export const transactionInput = z
     projectId: z.number().int().nullable().default(null),
     label: z.string().trim().max(120).default(""),
     note: z.string().trim().max(500).default(""),
+    paymentMethod: z.enum(PAYMENT_METHODS).nullable().optional(),
+    time: z.string().regex(/^\d{2}:\d{2}$/, "Heure attendue au format HH:MM").nullable().optional(),
   })
   .superRefine((v, ctx) => {
     if (v.type === "transfer") {
@@ -190,6 +196,7 @@ export interface LabelSuggestion {
   categoryId: number | null;
   walletId: number;
   type: TxType;
+  paymentMethod: PaymentMethod | null;
 }
 
 // ---- MVC 2 : saisie sans effort ----
@@ -197,6 +204,7 @@ export interface LabelSuggestion {
 /** Brouillon renvoyé par l'IA (photo ou voix), à confirmer par l'utilisateur. */
 export interface TransactionDraft {
   type: TxType | null;
+  paymentMethod: PaymentMethod | null;
   amount: number | null;
   date: string | null;
   label: string;

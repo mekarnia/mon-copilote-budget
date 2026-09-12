@@ -50,7 +50,8 @@ export function TransactionsPage() {
                       {t.type === "transfer" ? `${t.walletName} → ${t.toWalletName}` : t.label || t.categoryName}
                     </p>
                     <p className="truncate text-sm text-slate-500">
-                      {t.type === "transfer" ? "Virement interne" : `${t.categoryName ?? "Sans catégorie"} · ${t.walletName}`}
+                      {t.time && <span className="mr-1 tabular-nums">{t.time}</span>}
+                      {t.type === "transfer" ? "Virement interne" : `${t.categoryName ?? "Sans catégorie"} · ${t.paymentMethod === "cash" ? "💵" : t.paymentMethod === "card" ? "💳" : ""} ${t.walletName}`}
                       {t.photoPath && " · 📷"}
                       {t.status === "to_verify" && <span className="ml-1 rounded bg-amber-100 px-1 text-xs text-amber-800 dark:bg-amber-900 dark:text-amber-200">à vérifier</span>}
                     </p>

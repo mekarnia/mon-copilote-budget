@@ -7,7 +7,7 @@ import { learnRule } from "./rules.js";
 interface Row {
   id: number; type: Transaction["type"]; amount: number; date: string; wallet_id: number; to_wallet_id: number | null;
   category_id: number | null; project_id: number | null; recurrence_id: number | null; label: string; note: string; photo_path: string | null;
-  status: Transaction["status"]; import_id: number | null;
+  status: Transaction["status"]; import_id: number | null; payment_method: Transaction["paymentMethod"]; time: string | null;
   category_name: string | null; technical_key: string | null; wallet_name: string; to_wallet_name: string | null;
 }
 
@@ -21,7 +21,7 @@ const SELECT = `
 const map = (r: Row): Transaction => ({
   id: r.id, type: r.type, amount: r.amount, date: r.date, walletId: r.wallet_id, toWalletId: r.to_wallet_id,
   categoryId: r.category_id, projectId: r.project_id, recurrenceId: r.recurrence_id, label: r.label, note: r.note,
-  photoPath: r.photo_path, status: r.status, importId: r.import_id, technical: r.technical_key !== null, categoryName: r.category_name,
+  photoPath: r.photo_path, status: r.status, importId: r.import_id, paymentMethod: r.payment_method ?? null, time: r.time ?? null, technical: r.technical_key !== null, categoryName: r.category_name,
   walletName: r.wallet_name, toWalletName: r.to_wallet_name,
 });
 
@@ -58,7 +58,8 @@ export function getTransaction(db: DB, id: number): Transaction | null {
 function normalize(input: TransactionInput, db: DB) {
   const categoryId = input.type === "transfer" ? technicalCategoryId(db, "transfer") : input.categoryId;
   const toWalletId = input.type === "transfer" ? input.toWalletId : null;
-  return { ...input, categoryId, toWalletId };
+  const paymentMethod = input.type === "transfer" ? null : input.paymentMethod ?? null;
+  return { ...input, categoryId, toWalletId, paymentMethod, time: input.time ?? null };
 }
 
 interface CreateExtra {
@@ -76,8 +77,8 @@ function maybeLearn(db: DB, v: TransactionInput, learn: boolean) {
 export function createTransaction(db: DB, input: TransactionInput, extra: CreateExtra = {}): Transaction {
   const v = normalize(input, db);
   const res = db
-    .prepare("INSERT INTO transactions (type, amount, date, wallet_id, to_wallet_id, category_id, project_id, recurrence_id, import_id, status, label, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(v.type, v.amount, v.date, v.walletId, v.toWalletId, v.categoryId, v.projectId, extra.recurrenceId ?? null, extra.importId ?? null, extra.status ?? "confirmed", v.label, v.note);
+    .prepare("INSERT INTO transactions (type, amount, date, wallet_id, to_wallet_id, category_id, project_id, recurrence_id, import_id, status, label, note, payment_method, time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(v.type, v.amount, v.date, v.walletId, v.toWalletId, v.categoryId, v.projectId, extra.recurrenceId ?? null, extra.importId ?? null, extra.status ?? "confirmed", v.label, v.note, v.paymentMethod, v.time);
   maybeLearn(db, v, extra.learn ?? true);
   return getTransaction(db, Number(res.lastInsertRowid))!;
 }
@@ -86,8 +87,8 @@ export function createTransaction(db: DB, input: TransactionInput, extra: Create
 export function updateTransaction(db: DB, id: number, input: TransactionInput): Transaction | null {
   if (!getTransaction(db, id)) return null;
   const v = normalize(input, db);
-  db.prepare("UPDATE transactions SET type = ?, amount = ?, date = ?, wallet_id = ?, to_wallet_id = ?, category_id = ?, project_id = ?, label = ?, note = ?, status = 'confirmed' WHERE id = ?")
-    .run(v.type, v.amount, v.date, v.walletId, v.toWalletId, v.categoryId, v.projectId, v.label, v.note, id);
+  db.prepare("UPDATE transactions SET type = ?, amount = ?, date = ?, wallet_id = ?, to_wallet_id = ?, category_id = ?, project_id = ?, label = ?, note = ?, payment_method = ?, time = ?, status = 'confirmed' WHERE id = ?")
+    .run(v.type, v.amount, v.date, v.walletId, v.toWalletId, v.categoryId, v.projectId, v.label, v.note, v.paymentMethod, v.time, id);
   maybeLearn(db, v, true);
   return getTransaction(db, id);
 }
@@ -117,9 +118,9 @@ export function setPhoto(db: DB, id: number, photoPath: string | null): Transact
 /** Auto-complétion : derniers libellés distincts avec la catégorie et le portefeuille utilisés la dernière fois. */
 export function suggestLabels(db: DB, q: string, limit = 8): LabelSuggestion[] {
   const rows = db
-    .prepare(`SELECT label, category_id, wallet_id, type FROM transactions
+    .prepare(`SELECT label, category_id, wallet_id, type, payment_method FROM transactions
       WHERE label <> '' AND label LIKE ? AND type <> 'transfer'
       GROUP BY label HAVING id = MAX(id) ORDER BY MAX(date) DESC LIMIT ?`)
-    .all(`%${q}%`, limit) as unknown as { label: string; category_id: number | null; wallet_id: number; type: Transaction["type"] }[];
-  return rows.map((r) => ({ label: r.label, categoryId: r.category_id, walletId: r.wallet_id, type: r.type }));
+    .all(`%${q}%`, limit) as unknown as { label: string; category_id: number | null; wallet_id: number; type: Transaction["type"]; payment_method: Transaction["paymentMethod"] }[];
+  return rows.map((r) => ({ label: r.label, categoryId: r.category_id, walletId: r.wallet_id, type: r.type, paymentMethod: r.payment_method ?? null }));
 }

@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS imports (
 const MIGRATIONS: { table: string; column: string; ddl: string }[] = [
   { table: "transactions", column: "status", ddl: "ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'confirmed'" },
   { table: "transactions", column: "import_id", ddl: "ALTER TABLE transactions ADD COLUMN import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL" },
+  { table: "transactions", column: "payment_method", ddl: "ALTER TABLE transactions ADD COLUMN payment_method TEXT" },
+  { table: "transactions", column: "time", ddl: "ALTER TABLE transactions ADD COLUMN time TEXT" },
 ];
 
 function migrate(db: DB) {
