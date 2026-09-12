@@ -179,11 +179,13 @@ export function TransactionFormPage() {
 
   return (
     <div className="mx-auto min-h-full max-w-lg px-4 pb-10 pt-4">
-      <div className="mb-4 flex items-center justify-between">
-        <button className="btn-ghost px-3 py-2" onClick={() => navigate(-1)}>Annuler</button>
-        <h1 className="text-lg font-bold">{editId ? (toVerify ? "À vérifier" : "Modifier") : "Ajouter"}</h1>
-        <span className="w-20" />
-      </div>
+      {editId && (
+        <div className="mb-4 flex items-center justify-between">
+          <button className="btn-ghost px-3 py-2" onClick={() => navigate(-1)}>‹</button>
+          <h1 className="text-lg font-bold">{toVerify ? "À vérifier" : "Modifier"}</h1>
+          <span className="w-12" />
+        </div>
+      )}
 
       {!editId && (
         <div className="mb-3 grid grid-cols-3 gap-2">
@@ -364,7 +366,10 @@ export function TransactionFormPage() {
         )}
 
         <ErrorBanner error={save.error || upload.error || confirmTx.error} />
-        <button className="btn-primary w-full text-lg" disabled={!canSave || save.isPending || busy}>{editId ? "Enregistrer" : "Ajouter"}</button>
+        <div className="grid grid-cols-[1fr_2fr] gap-2">
+          <button type="button" className="btn-ghost text-lg" onClick={() => navigate(-1)}>Annuler</button>
+          <button className="btn-primary text-lg" disabled={!canSave || save.isPending || busy}>{editId ? "Enregistrer" : "Ajouter"}</button>
+        </div>
         {editId && (
           <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette opération ?")) { await remove.mutateAsync(editId); navigate(-1); } }}>
             Supprimer
