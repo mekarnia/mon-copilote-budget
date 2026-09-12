@@ -16,7 +16,7 @@ describe("habitudes", () => {
     add("Le Bistrot", 3200, "2026-09-10", resto); add("Le Bistrot", 3500, "2026-06-01", resto);
     add("Sushi Bar", 4500, "2026-01-10", resto);
     add("Boulangerie du coin", 320, "2026-09-11", boulangerie, especes, "cash"); add("Boulangerie du coin", 310, "2026-09-04", boulangerie, especes, "cash");
-    for (let i = 0; i < 8; i++) { add(`Resto ${i}`, 2000 + i, "2026-08-01", resto); add(`Resto ${i}`, 2000 + i, "2026-07-01", resto); }
+    for (const n of ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]) { add(`Resto ${n}`, 2000, "2026-08-01", resto); add(`Resto ${n}`, 2000, "2026-07-01", resto); }
     return { db, resto, boulangerie, especes };
   }
 
