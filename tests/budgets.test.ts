@@ -64,7 +64,8 @@ describe("contexte d'une opération", () => {
     createTransaction(db, { type: "expense", amount: 9999, date: "2026-08-11", walletId: courant, toWalletId: null, categoryId: catId(db, "Supermarché"), projectId: null, label: "", note: "" });
     const ctx = transactionContext(db, t.id)!;
     expect(ctx.month).toBe("2026-09");
-    expect(ctx.sub).toMatchObject({ name: "Supermarché", total: 10530, count: 2 });
     expect(ctx.parent).toMatchObject({ name: "Courses", total: 10850, count: 3 });
+    expect(ctx.subs.map((x) => [x.name, x.total, x.count])).toEqual([["Supermarché", 10530, 2], ["Boulangerie", 320, 1]]);
+    expect(ctx.currentId).toBe(catId(db, "Supermarché"));
   });
 });

@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useHabits, useLabels, useParseSpeech,
-  useRemovePhoto, useSaveTransaction, useTransaction, useCategoryContext, useUploadPhoto, useWallets,
+  useRemovePhoto, useSaveTransaction, useTransaction, useTransactionContext, useUploadPhoto, useWallets,
 } from "@/lib/queries";
 import { Link } from "react-router-dom";
-import { monthLabel, monthOf } from "@shared/dates";
+import { monthLabel } from "@shared/dates";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
 import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -56,7 +56,7 @@ export function TransactionFormPage() {
   const [labelFocused, setLabelFocused] = useState(false);
   const { data: suggestions = [] } = useLabels(labelFocused ? label : "");
   const { data: habits = [] } = useHabits(type, categoryId, amount);
-  const { data: context } = useCategoryContext(categoryId, monthOf(date), type);
+  const { data: context } = useTransactionContext(editId);
   const visibleHabits = editId ? [] : habits.filter((h) => h.label !== label);
 
   // MVC 2 : brouillon IA, dictée, catégorie proposée
@@ -281,19 +281,19 @@ export function TransactionFormPage() {
           <Field label="Heure"><input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
         )}
 
-        {type !== "transfer" && !isAdjustment && context?.parent && (context.parent.count > 0 || context.sub) && (
+        {editId && context?.parent && (
           <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">
             <p className="mb-1 text-xs text-slate-500">{type === "income" ? "Reçu" : "Dépensé"} en {monthLabel(context.month!)}</p>
-            {context.sub && (
-              <Link to={`/operations?categoryId=${context.sub.id}&month=${context.month}`} className="flex items-center justify-between py-0.5">
-                <span>{context.sub.name} <span className="text-slate-500">· {context.sub.count} op.</span></span>
-                <span className="font-semibold">{formatCents(context.sub.total)} ›</span>
-              </Link>
-            )}
-            <Link to={`/operations?categoryId=${context.parent.id}&month=${context.month}`} className="flex items-center justify-between py-0.5">
-              <span>{context.parent.icon} {context.parent.name} <span className="text-slate-500">· {context.parent.count} op.</span></span>
-              <span className="font-semibold">{formatCents(context.parent.total)} ›</span>
+            <Link to={`/operations?categoryId=${context.parent.id}&month=${context.month}`} className="flex items-center justify-between py-0.5 font-semibold">
+              <span>Total {context.parent.icon} {context.parent.name} <span className="font-normal text-slate-500">· {context.parent.count} op.</span></span>
+              <span>{formatCents(context.parent.total)} ›</span>
             </Link>
+            {context.subs.map((sub) => (
+              <Link key={sub.id} to={`/operations?categoryId=${sub.id}&month=${context.month}`} className={`flex items-center justify-between py-0.5 pl-3 ${sub.id === context.currentId ? "" : "text-slate-600 dark:text-slate-300"}`}>
+                <span>{sub.id === context.currentId ? "▸ " : ""}{sub.name} <span className="text-slate-500">· {sub.count} op.</span></span>
+                <span>{formatCents(sub.total)} ›</span>
+              </Link>
+            ))}
           </div>
         )}
 

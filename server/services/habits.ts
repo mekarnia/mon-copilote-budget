@@ -54,8 +54,7 @@ export function suggestHabits(
     const last = items[0];
     const [ly, lm, ld] = last.date.split("-").map(Number);
     const days = Math.max(0, (todayMs - Date.UTC(ly, lm - 1, ld)) / 86400000);
-    // Une habitude est un libellé revu au moins deux fois ; un achat unique n'est proposé que s'il est récent.
-    if (items.length < 2 && days > 60) continue;
+    if (items.length < 2) continue; // une habitude, c'est un libellé revu au moins deux fois
     const typical = median(items.map((i) => i.amount));
     let score = items.length * (1 / (1 + days / 60));
     if (opts.amount) {
@@ -76,6 +75,5 @@ export function suggestHabits(
       score,
     });
   }
-  // Les vraies habitudes d'abord, puis les achats récents uniques, 5 au maximum.
-  return out.sort((a, b) => (b.count >= 2 ? 1 : 0) - (a.count >= 2 ? 1 : 0) || b.score - a.score).slice(0, opts.limit ?? 5);
+  return out.sort((a, b) => b.score - a.score).slice(0, opts.limit ?? 5);
 }

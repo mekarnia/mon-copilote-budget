@@ -81,7 +81,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.get("/categories/:id/context", (c) => {
     const type = c.req.query("type") === "income" ? "income" : "expense";
     const ctx = tx.categoryContext(db, id(c.req.param("id")), c.req.query("month") || currentMonth(), type);
-    return c.json(ctx ?? { month: null, sub: null, parent: null });
+    return c.json(ctx ?? { month: null, currentId: null, parent: null, subs: [] });
   });
   api.post("/categories", async (c) => c.json(categories.createCategory(db, parse(categoryInput, await c.req.json())), 201));
   api.put("/categories/:id", async (c) => {

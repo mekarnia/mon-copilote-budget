@@ -131,8 +131,9 @@ export function suggestLabels(db: DB, q: string, limit = 8): LabelSuggestion[] {
 
 export interface CategoryContext {
   month: string;
-  sub: { id: number; name: string; total: number; count: number } | null;
+  currentId: number;
   parent: { id: number; name: string; icon: string | null; total: number; count: number } | null;
+  subs: { id: number; name: string; total: number; count: number }[];
 }
 
 /** Totaux d'un mois pour une sous-catégorie et sa catégorie parente, pour un type donné (dépense ou revenu). */
@@ -147,11 +148,16 @@ export function categoryContext(db: DB, categoryId: number, month: string, type:
   const parentId = cat.parent_id ?? cat.id;
   const parent = db.prepare("SELECT id, name, icon FROM categories WHERE id = ?").get(parentId) as { id: number; name: string; icon: string | null };
   const parentTotals = sum(parent.id, true);
-  const subTotals = cat.parent_id ? sum(cat.id, false) : null;
+  const children = db.prepare("SELECT id, name FROM categories WHERE parent_id = ? ORDER BY sort, id").all(parentId) as unknown as { id: number; name: string }[];
+  const subs = children
+    .map((ch) => ({ id: ch.id, name: ch.name, ...sum(ch.id, false) }))
+    .filter((x) => x.count > 0 || x.id === cat.id)
+    .sort((a, b) => b.total - a.total);
   return {
     month,
-    sub: cat.parent_id && subTotals ? { id: cat.id, name: cat.name, total: subTotals.total, count: subTotals.count } : null,
+    currentId: cat.id,
     parent: { id: parent.id, name: parent.name, icon: parent.icon, total: parentTotals.total, count: parentTotals.count },
+    subs,
   };
 }
 
