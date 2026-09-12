@@ -23,6 +23,7 @@ import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
 import { suggestHabits } from "./services/habits.js";
+import { stats } from "./services/stats.js";
 import { computeInsights } from "./services/insights.js";
 
 export interface AppOptions {
@@ -219,6 +220,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
       throw new HttpError(400, (e as Error).message);
     }
   });
+
+  // Suivi
+  api.get("/stats", (c) => c.json(stats(db, c.req.query("month") || currentMonth())));
 
   // Accueil
   api.get("/home", (c) => {

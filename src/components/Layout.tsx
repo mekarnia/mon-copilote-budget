@@ -5,6 +5,7 @@ const tabs = [
   { to: "/operations", label: "Opérations", icon: "📋" },
   { to: "/budgets", label: "Budgets", icon: "🎯" },
   { to: "/projets", label: "Projets", icon: "🚀" },
+  { to: "/suivi", label: "Suivi", icon: "📈" },
 ];
 
 export function Layout() {
@@ -22,7 +23,7 @@ export function Layout() {
         +
       </button>
       <nav className="fixed bottom-0 left-0 right-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
-        <div className="mx-auto grid max-w-lg grid-cols-4 pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto grid max-w-lg grid-cols-5 pb-[env(safe-area-inset-bottom)]">
           {tabs.map((t) => (
             <NavLink
               key={t.to}

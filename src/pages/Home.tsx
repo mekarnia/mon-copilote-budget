@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { VIEWS } from "./Suivi";
 import { useHome, useToVerifyCount } from "@/lib/queries";
 import { Money, ProgressBar, Empty } from "@/components/ui";
 import { CoachButton } from "@/components/CoachCard";
-import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
+import { currentMonth, monthLabel } from "@shared/dates";
 
 export function HomePage() {
   const month = currentMonth();
   const { data, isLoading, error } = useHome(month);
   const { data: toVerify } = useToVerifyCount();
+  const [dashMenu, setDashMenu] = useState(false);
 
   if (isLoading) return <p className="text-slate-500">Chargement…</p>;
   if (error || !data) return <div className="card space-y-2 text-sm">
@@ -26,7 +29,19 @@ export function HomePage() {
           <p className="text-sm text-slate-500 capitalize">{monthLabel(month)}</p>
           <h1 className="text-2xl font-bold">Mon budget</h1>
         </div>
-        <Link to="/reglages" className="btn-ghost px-3 py-2" aria-label="Réglages">⚙️</Link>
+        <div className="relative flex gap-2">
+          <button className="btn-ghost px-3 py-2" aria-label="Tableaux de bord" onClick={() => setDashMenu((v) => !v)}>📊</button>
+          <Link to="/reglages" className="btn-ghost px-3 py-2" aria-label="Réglages">⚙️</Link>
+          {dashMenu && (
+            <div className="absolute right-0 top-12 z-20 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900" onMouseLeave={() => setDashMenu(false)}>
+              {VIEWS.map((v) => (
+                <Link key={v.key} to={`/suivi?vue=${v.key}`} className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-slate-50 dark:hover:bg-slate-800" onClick={() => setDashMenu(false)}>
+                  <span>{v.icon}</span>{v.label}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       <section className="card text-center">
@@ -67,18 +82,6 @@ export function HomePage() {
           ))
         )}
       </section>
-
-      {data.upcoming.length > 0 && (
-        <section className="card space-y-2">
-          <h2 className="font-semibold">Prochaines factures (7 jours)</h2>
-          {data.upcoming.map((b, i) => (
-            <div key={i} className="flex items-center justify-between text-sm">
-              <span><span className="text-slate-500">{dayLabel(b.date)}</span> · {b.label}</span>
-              <Money cents={b.type === "income" ? b.amount : -b.amount} signed className={b.type === "income" ? "text-emerald-600" : ""} />
-            </div>
-          ))}
-        </section>
-      )}
 
       <section className="card space-y-3">
         <div className="flex items-center justify-between">
