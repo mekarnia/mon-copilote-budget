@@ -1,5 +1,6 @@
 import type { DB } from "../db.js";
 import { addDays, monthBounds, shiftMonth, todayIso } from "../../shared/dates.js";
+import { formatCents } from "../../shared/money.js";
 
 export type PeriodKey = "7d" | "1m" | "6m" | "1y";
 export const PERIOD_KEYS: PeriodKey[] = ["7d", "1m", "6m", "1y"];
@@ -92,11 +93,22 @@ export function periodStats(db: DB, type: "expense" | "income", key: PeriodKey, 
   };
 }
 
+export interface AvoidableGoal {
+  target: number;
+  saving: number;
+  projectName: string | null;
+  reason: string;
+  actions: string[];
+  generatedBy: "ai" | "template";
+}
+
 export interface AvoidableStats extends PeriodStats {
   allExpenses: number;
   shareOfExpenses: number;
-  goal: { target: number; saving: number; projectName: string | null } | null;
+  goal: AvoidableGoal | null;
   avoidableIds: number[];
+  /** Libellés les plus fréquents parmi les dépenses évitables de la période, pour des conseils concrets. */
+  topLabels: { label: string; count: number; total: number; categoryName: string }[];
 }
 
 export function avoidableIds(db: DB): number[] {
@@ -108,10 +120,29 @@ export function avoidableStats(db: DB, key: PeriodKey, today = todayIso()): Avoi
   const base = ids.length ? periodStats(db, "expense", key, today, { ids }) : { ...periodStats(db, "expense", key, today), total: 0, previousTotal: 0, deltaPct: null, perDay: 0, points: [], previousPoints: [], byCategory: [] };
   const all = periodStats(db, "expense", key, today);
   const project = db.prepare("SELECT name FROM projects WHERE done = 0 ORDER BY due_date IS NULL, due_date, id LIMIT 1").get() as { name: string } | undefined;
-  let goal: AvoidableStats["goal"] = null;
-  if (base.total > 0) {
-    const target = Math.floor((Math.min(base.total * 0.8, base.previousTotal > 0 ? base.previousTotal : base.total * 0.8)) / 1000) * 1000;
-    if (target > 0 && target < base.total) goal = { target, saving: base.total - target, projectName: project?.name ?? null };
-  }
-  return { ...base, allExpenses: all.total, shareOfExpenses: all.total > 0 ? base.total / all.total : 0, goal, avoidableIds: ids };
+  const topLabels = ids.length
+    ? (db.prepare(`SELECT t.label, COUNT(*) AS count, SUM(t.amount) AS total, c.name AS categoryName FROM transactions t JOIN categories c ON c.id = t.category_id
+        WHERE t.type = 'expense' AND t.label <> '' AND t.date BETWEEN ? AND ? AND (t.category_id IN (${ids.map(() => "?").join(",")}) OR c.parent_id IN (${ids.map(() => "?").join(",")}))
+        GROUP BY LOWER(t.label) ORDER BY count DESC, total DESC LIMIT 5`).all(base.range.from, base.range.to, ...ids, ...ids) as unknown as AvoidableStats["topLabels"])
+    : [];
+  return { ...base, allExpenses: all.total, shareOfExpenses: all.total > 0 ? base.total / all.total : 0, goal: templateGoal(base, project?.name ?? null, topLabels), avoidableIds: ids, topLabels };
+}
+
+/** Objectif de secours, sans IA : la meilleure période récente sinon 80 %, jamais sous 50 % du niveau actuel. */
+export function templateGoal(base: PeriodStats, projectName: string | null, topLabels: AvoidableStats["topLabels"]): AvoidableGoal | null {
+  if (base.total <= 0) return null;
+  const candidates = [base.total * 0.8];
+  if (base.previousTotal > 0) candidates.push(base.previousTotal);
+  let target = Math.floor(Math.min(...candidates) / 1000) * 1000;
+  target = Math.max(target, Math.floor((base.total * 0.5) / 1000) * 1000);
+  if (target <= 0 || target >= base.total) return null;
+  const actions: string[] = [];
+  const top = topLabels[0];
+  if (top && top.count >= 2) actions.push(`${top.label} revient ${top.count} fois (${formatCents(top.total)}) : en garder ${Math.max(1, top.count - 1)}.`);
+  const cat = base.byCategory[0];
+  if (cat) actions.push(`${cat.name} pèse ${Math.round(cat.share * 100)} % des dépenses évitables : c'est là que l'effort compte.`);
+  const reason = base.previousTotal > 0 && base.previousTotal < base.total
+    ? `Vous aviez tenu ${formatCents(base.previousTotal)} sur la période précédente.`
+    : "Une baisse de 20 % reste tenable sans changer vos habitudes de fond.";
+  return { target, saving: base.total - target, projectName, reason, actions, generatedBy: "template" };
 }

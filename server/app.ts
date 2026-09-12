@@ -24,7 +24,7 @@ import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
 import { suggestHabits } from "./services/habits.js";
 import { stats } from "./services/stats.js";
-import { avoidableStats, periodStats, PERIOD_KEYS, type PeriodKey } from "./services/periods.js";
+import { periodStats, PERIOD_KEYS, type PeriodKey } from "./services/periods.js";
 import { computeInsights } from "./services/insights.js";
 
 export interface AppOptions {
@@ -233,7 +233,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     const type = c.req.query("type") === "income" ? "income" : "expense";
     return c.json(periodStats(db, type, periodOf(c.req.query("period"))));
   });
-  api.get("/stats/avoidable", (c) => c.json(avoidableStats(db, periodOf(c.req.query("period")))));
+  api.get("/stats/avoidable", async (c) => c.json(await coach.avoidableWithAiGoal(db, periodOf(c.req.query("period")))));
   api.put("/categories/:id/avoidable", async (c) => {
     const body = (await c.req.json()) as { avoidable?: boolean };
     const r = categories.setAvoidable(db, id(c.req.param("id")), body.avoidable === true);

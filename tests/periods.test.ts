@@ -9,6 +9,13 @@ function exp(db: ReturnType<typeof memDb>, amount: number, date: string, cat: st
 }
 
 describe("périodes", () => {
+  it("l'objectif de secours ne descend jamais sous la moitié du niveau actuel", () => {
+    const db = memDb();
+    exp(db, 10000, "2026-09-10", "Restaurant"); exp(db, 1000, "2026-08-01", "Restaurant");
+    const a = avoidableStats(db, "1m", TODAY);
+    expect(a.goal?.target).toBe(5000);
+  });
+
   it("calcule les bornes et la période précédente", () => {
     expect(periodRange("7d", TODAY)).toMatchObject({ from: "2026-09-06", to: TODAY, prevFrom: "2026-08-30", prevTo: "2026-09-05", granularity: "day", days: 7 });
     expect(periodRange("1m", TODAY)).toMatchObject({ from: "2026-08-14", to: TODAY, prevFrom: "2026-07-15", prevTo: "2026-08-13", days: 30 });
@@ -48,5 +55,7 @@ describe("périodes", () => {
     expect(a.byCategory.map((c) => c.name)).toEqual(["Restaurant", "Sorties"]);
     expect(a.goal?.target).toBe(5000);
     expect(a.goal?.saving).toBe(2000);
+    expect(a.goal?.generatedBy).toBe("template");
+    expect(a.goal?.actions.length).toBeGreaterThan(0);
   });
 });

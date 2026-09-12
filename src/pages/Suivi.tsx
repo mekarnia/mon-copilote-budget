@@ -21,7 +21,8 @@ interface Point { label: string; date: string; value: number; cumulative: number
 interface Cat { categoryId: number; name: string; icon: string | null; total: number; share: number }
 interface Range { key: PeriodKey; from: string; to: string; prevFrom: string; prevTo: string; granularity: "day" | "month"; days: number }
 interface PeriodStats { type: "expense" | "income"; range: Range; total: number; previousTotal: number; deltaPct: number | null; perDay: number; points: Point[]; previousPoints: Point[]; byCategory: Cat[] }
-interface AvoidableStats extends PeriodStats { allExpenses: number; shareOfExpenses: number; goal: { target: number; saving: number; projectName: string | null } | null; avoidableIds: number[] }
+interface Goal { target: number; saving: number; projectName: string | null; reason: string; actions: string[]; generatedBy: "ai" | "template" }
+interface AvoidableStats extends PeriodStats { allExpenses: number; shareOfExpenses: number; goal: Goal | null; avoidableIds: number[] }
 
 const frDate = (iso: string) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
 const shortMonth = (m: string) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString("fr-FR", { month: "short" }).replace(".", ""); };
@@ -107,8 +108,15 @@ function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod:
           <Bars points={data.points} color="fill-[#eb6834] dark:fill-[#d95926]" />
         )}
         {data.goal && (
-          <div className="rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-200">
-            🎯 Objectif du coach : passer sous {formatCents(data.goal.target)} sur la prochaine période, soit {formatCents(data.goal.saving)} de plus{data.goal.projectName ? ` pour ${data.goal.projectName}` : " à mettre de côté"}.
+          <div className="space-y-1.5 rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950 dark:text-orange-200">
+            <p className="font-semibold">🎯 Objectif du coach : passer sous {formatCents(data.goal.target)}, soit {formatCents(data.goal.saving)} de plus{data.goal.projectName ? ` pour ${data.goal.projectName}` : " à mettre de côté"}.</p>
+            <p>{data.goal.reason}</p>
+            {data.goal.actions.length > 0 && (
+              <ul className="list-disc space-y-0.5 pl-5">
+                {data.goal.actions.map((a, i) => <li key={i}>{a}</li>)}
+              </ul>
+            )}
+            <p className="text-xs opacity-70">{data.goal.generatedBy === "ai" ? "Rédigé par l'IA d'après vos opérations." : "Calculé d'après vos opérations. Ajoutez une clé IA pour des conseils rédigés."}</p>
           </div>
         )}
       </div>

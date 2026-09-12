@@ -4,6 +4,7 @@ import { isoWeek, todayIso } from "../../shared/dates.js";
 import { AiNotConfigured, getClient } from "./ai.js";
 import { computeInsights, contextSummary } from "./insights.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
+import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey } from "./periods.js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
@@ -142,4 +143,56 @@ export async function suggestedBudgets(db: DB, month: string): Promise<{ items: 
   } catch {
     return { items: base, generatedBy: "template" };
   }
+}
+
+// ---------- Objectif sur les dépenses évitables ----------
+
+const goalSchema = z.object({
+  target_euros: z.number(),
+  reason: z.string(),
+  actions: z.array(z.string()).max(3),
+});
+
+/** Statistiques évitables dont l'objectif est rédigé par l'IA quand une clé existe. Mis en cache par jour et par montant. */
+export async function avoidableWithAiGoal(db: DB, period: PeriodKey, today = todayIso()): Promise<AvoidableStats> {
+  const stats = avoidableStats(db, period, today);
+  if (!stats.goal || stats.total <= 0) return stats;
+  const cacheKey = `goal:${period}`;
+  const cached = db.prepare("SELECT value FROM settings WHERE key = ?").get(cacheKey) as { value: string } | undefined;
+  if (cached) {
+    const c = JSON.parse(cached.value) as { date: string; total: number; goal: AvoidableGoal };
+    if (c.date === today && c.total === stats.total) return { ...stats, goal: c.goal };
+  }
+  let goal: AvoidableGoal = stats.goal;
+  try {
+    const client = getClient(db);
+    const response = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 800,
+      output_config: { effort: "low", format: zodOutputFormat(goalSchema) },
+      system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la dizaine d'euros ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.`,
+      messages: [{
+        role: "user",
+        content: JSON.stringify({
+          period, total_euros: stats.total / 100, previous_total_euros: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
+          computed_target_euros: stats.goal.target / 100, project: stats.goal.projectName,
+          by_category: stats.byCategory.map((c) => ({ name: c.name, total_euros: c.total / 100, share: Math.round(c.share * 100) })),
+          frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_euros: l.total / 100, category: l.categoryName })),
+        }),
+      }],
+    });
+    const p = response.parsed_output;
+    if (p && p.target_euros > 0) {
+      const cents = Math.round(p.target_euros * 100);
+      const bounded = Math.min(Math.round(stats.total * 0.95), Math.max(Math.round(stats.total * 0.5), cents));
+      const target = Math.floor(bounded / 1000) * 1000;
+      if (target > 0 && target < stats.total) {
+        goal = { target, saving: stats.total - target, projectName: stats.goal.projectName, reason: p.reason.trim() || stats.goal.reason, actions: p.actions.map((a) => a.trim()).filter(Boolean).slice(0, 3), generatedBy: "ai" };
+      }
+    }
+  } catch {
+    /* clé absente ou refusée : objectif calculé */
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(cacheKey, JSON.stringify({ date: today, total: stats.total, goal }));
+  return { ...stats, goal };
 }
