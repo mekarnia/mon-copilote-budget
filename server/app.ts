@@ -97,7 +97,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.get("/transactions", (c) => {
     const walletId = c.req.query("walletId");
     const status = c.req.query("status");
+    const categoryId = c.req.query("categoryId");
     return c.json(tx.listTransactions(db, {
+      categoryId: categoryId ? id(categoryId) : undefined,
       status: status === "to_verify" || status === "confirmed" ? status : undefined,
       month: c.req.query("month") || undefined,
       q: c.req.query("q") || undefined,
@@ -117,6 +119,10 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.post("/transactions/:id/confirm", (c) => {
     const t = tx.confirmTransaction(db, id(c.req.param("id")));
     return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);
+  });
+  api.get("/transactions/:id/context", (c) => {
+    const ctx = tx.transactionContext(db, id(c.req.param("id")));
+    return ctx ? c.json(ctx) : c.json({ month: null, sub: null, parent: null });
   });
   api.get("/transactions/:id", (c) => {
     const t = tx.getTransaction(db, id(c.req.param("id")));

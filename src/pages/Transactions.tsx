@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useToVerifyCount, useTransactions } from "@/lib/queries";
+import { Link, useSearchParams } from "react-router-dom";
+import { useCategories, useToVerifyCount, useTransactions } from "@/lib/queries";
 import { Money, MonthNav, Empty } from "@/components/ui";
 import { currentMonth, dayLabel } from "@shared/dates";
 import type { Transaction } from "@shared/types";
@@ -12,10 +12,15 @@ function amountOf(t: Transaction) {
 }
 
 export function TransactionsPage() {
-  const [month, setMonth] = useState(currentMonth());
+  const [params, setParams] = useSearchParams();
+  const categoryId = params.get("categoryId") ? Number(params.get("categoryId")) : null;
+  const [month, setMonth] = useState(params.get("month") ?? currentMonth());
   const [q, setQ] = useState("");
   const [onlyToVerify, setOnlyToVerify] = useState(false);
-  const { data = [], isLoading } = useTransactions(month, q, onlyToVerify ? "to_verify" : undefined);
+  const { data = [], isLoading } = useTransactions(month, q, onlyToVerify ? "to_verify" : undefined, categoryId);
+  const { data: categories = [] } = useCategories();
+  const filterCat = categories.find((c) => c.id === categoryId);
+  const filterParent = filterCat?.parentId ? categories.find((c) => c.id === filterCat.parentId) : null;
   const { data: toVerify } = useToVerifyCount();
 
   const groups = new Map<string, Transaction[]>();
@@ -26,6 +31,11 @@ export function TransactionsPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Opérations</h1>
       {!onlyToVerify && <MonthNav month={month} onChange={setMonth} />}
+      {filterCat && (
+        <button className="chip w-full bg-brand/10 text-left" onClick={() => setParams({})}>
+          Filtre : {filterParent ? `${filterParent.icon ?? ""} ${filterParent.name} › ` : `${filterCat.icon ?? ""} `}{filterCat.name} <span className="text-slate-500">✕ retirer</span>
+        </button>
+      )}
       {(toVerify?.count ?? 0) > 0 && (
         <button className={`chip w-full text-left ${onlyToVerify ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`} onClick={() => setOnlyToVerify((v) => !v)}>
           {onlyToVerify ? "← Retour à toutes les opérations" : `⚠️ ${toVerify!.count} opération${toVerify!.count > 1 ? "s" : ""} importée${toVerify!.count > 1 ? "s" : ""} à vérifier`}

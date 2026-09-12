@@ -52,3 +52,19 @@ describe("budgets et accueil", () => {
     expect(homeSummary(db, "2026-09", "2026-09-11").expense).toBe(0);
   });
 });
+
+describe("contexte d'une opération", () => {
+  it("donne les totaux du mois de la sous-catégorie et de la catégorie", async () => {
+    const { transactionContext } = await import("../server/services/transactions.js");
+    const db = memDb();
+    const courant = walletId(db, "Compte courant");
+    const t = createTransaction(db, { type: "expense", amount: 4530, date: "2026-09-10", walletId: courant, toWalletId: null, categoryId: catId(db, "Supermarché"), projectId: null, label: "Carrefour", note: "" });
+    createTransaction(db, { type: "expense", amount: 6000, date: "2026-09-03", walletId: courant, toWalletId: null, categoryId: catId(db, "Supermarché"), projectId: null, label: "Lidl", note: "" });
+    createTransaction(db, { type: "expense", amount: 320, date: "2026-09-11", walletId: courant, toWalletId: null, categoryId: catId(db, "Boulangerie"), projectId: null, label: "", note: "" });
+    createTransaction(db, { type: "expense", amount: 9999, date: "2026-08-11", walletId: courant, toWalletId: null, categoryId: catId(db, "Supermarché"), projectId: null, label: "", note: "" });
+    const ctx = transactionContext(db, t.id)!;
+    expect(ctx.month).toBe("2026-09");
+    expect(ctx.sub).toMatchObject({ name: "Supermarché", total: 10530, count: 2 });
+    expect(ctx.parent).toMatchObject({ name: "Courses", total: 10850, count: 3 });
+  });
+});

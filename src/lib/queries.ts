@@ -9,11 +9,21 @@ import type {
 export const useWallets = (all = false) => useQuery({ queryKey: ["wallets", all], queryFn: () => api.get<Wallet[]>(`/api/wallets${all ? "?all=1" : ""}`) });
 export const useCategories = () => useQuery({ queryKey: ["categories"], queryFn: () => api.get<Category[]>("/api/categories") });
 export const useHome = (month: string) => useQuery({ queryKey: ["home", month], queryFn: () => api.get<HomeSummary>(`/api/home?month=${month}`) });
-export const useTransactions = (month: string, q: string, status?: TxStatus) =>
+export const useTransactions = (month: string, q: string, status?: TxStatus, categoryId?: number | null) =>
   useQuery({
-    queryKey: ["transactions", month, q, status ?? ""],
-    queryFn: () => api.get<Transaction[]>(`/api/transactions?${status ? "" : `month=${month}&`}q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}`),
+    queryKey: ["transactions", month, q, status ?? "", categoryId ?? 0],
+    queryFn: () =>
+      api.get<Transaction[]>(
+        `/api/transactions?${status ? "" : `month=${month}&`}q=${encodeURIComponent(q)}${status ? `&status=${status}` : ""}${categoryId ? `&categoryId=${categoryId}` : ""}`,
+      ),
   });
+export interface CategoryContext {
+  month: string | null;
+  sub: { id: number; name: string; total: number; count: number } | null;
+  parent: { id: number; name: string; icon: string | null; total: number; count: number } | null;
+}
+export const useTransactionContext = (id: number | null) =>
+  useQuery({ queryKey: ["transactionContext", id], queryFn: () => api.get<CategoryContext>(`/api/transactions/${id}/context`), enabled: id !== null });
 export const useToVerifyCount = () => useQuery({ queryKey: ["toVerifyCount"], queryFn: () => api.get<{ count: number }>("/api/transactions/to-verify-count") });
 export const useTransaction = (id: number | null) =>
   useQuery({ queryKey: ["transaction", id], queryFn: () => api.get<Transaction>(`/api/transactions/${id}`), enabled: id !== null });

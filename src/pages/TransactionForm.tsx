@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useHabits, useLabels, useParseSpeech,
-  useRemovePhoto, useSaveTransaction, useTransaction, useUploadPhoto, useWallets,
+  useRemovePhoto, useSaveTransaction, useTransaction, useTransactionContext, useUploadPhoto, useWallets,
 } from "@/lib/queries";
+import { Link } from "react-router-dom";
+import { monthLabel } from "@shared/dates";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
 import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -27,6 +29,7 @@ export function TransactionFormPage() {
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const { data: existing } = useTransaction(editId);
+  const { data: context } = useTransactionContext(editId);
   const { data: wallets = [] } = useWallets();
   const { data: categories = [] } = useCategories();
   const save = useSaveTransaction();
@@ -223,6 +226,23 @@ export function TransactionFormPage() {
         <div className="mb-3 flex items-center justify-between rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           <span>Importée du relevé, à vérifier.</span>
           <button type="button" className="rounded-lg bg-amber-600 px-3 py-1 font-semibold text-white" onClick={async () => { await confirmTx.mutateAsync(existing!.id); navigate(-1); }}>C'est bon</button>
+        </div>
+      )}
+      {editId && context?.parent && (
+        <div className="card mb-4 space-y-2 text-sm">
+          <p className="text-slate-500">
+            {existing?.type === "income" ? "Reçu" : "Dépensé"} en {monthLabel(context.month!)}
+          </p>
+          {context.sub && (
+            <Link to={`/operations?categoryId=${context.sub.id}&month=${context.month}`} className="flex items-center justify-between">
+              <span>{context.sub.name} <span className="text-slate-500">· {context.sub.count} opération{context.sub.count > 1 ? "s" : ""}</span></span>
+              <span className="font-semibold">{formatCents(context.sub.total)} ›</span>
+            </Link>
+          )}
+          <Link to={`/operations?categoryId=${context.parent.id}&month=${context.month}`} className="flex items-center justify-between">
+            <span>{context.parent.icon} {context.parent.name} <span className="text-slate-500">· {context.parent.count} opération{context.parent.count > 1 ? "s" : ""}</span></span>
+            <span className="font-semibold">{formatCents(context.parent.total)} ›</span>
+          </Link>
         </div>
       )}
       {isAdjustment && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800">Correction de solde automatique. Vous pouvez la supprimer si elle est erronée.</p>}

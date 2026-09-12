@@ -1,7 +1,7 @@
 import type { DB } from "../db.js";
 import { technicalCategoryId } from "../db.js";
 import type { LabelSuggestion, Transaction, TransactionInput } from "../../shared/types.js";
-import { monthBounds } from "../../shared/dates.js";
+import { monthBounds, monthOf } from "../../shared/dates.js";
 import { learnRule } from "./rules.js";
 
 interface Row {
@@ -25,9 +25,13 @@ const map = (r: Row): Transaction => ({
   walletName: r.wallet_name, toWalletName: r.to_wallet_name,
 });
 
-export function listTransactions(db: DB, opts: { month?: string; q?: string; walletId?: number; limit?: number; status?: Transaction["status"] } = {}): Transaction[] {
+export function listTransactions(db: DB, opts: { month?: string; q?: string; walletId?: number; limit?: number; status?: Transaction["status"]; categoryId?: number } = {}): Transaction[] {
   const where: string[] = [];
   const params: (string | number)[] = [];
+  if (opts.categoryId) {
+    where.push("(t.category_id = ? OR c.parent_id = ?)");
+    params.push(opts.categoryId, opts.categoryId);
+  }
   if (opts.status) {
     where.push("t.status = ?");
     params.push(opts.status);
@@ -123,4 +127,32 @@ export function suggestLabels(db: DB, q: string, limit = 8): LabelSuggestion[] {
       GROUP BY label HAVING id = MAX(id) ORDER BY MAX(date) DESC LIMIT ?`)
     .all(`%${q}%`, limit) as unknown as { label: string; category_id: number | null; wallet_id: number; type: Transaction["type"]; payment_method: Transaction["paymentMethod"] }[];
   return rows.map((r) => ({ label: r.label, categoryId: r.category_id, walletId: r.wallet_id, type: r.type, paymentMethod: r.payment_method ?? null }));
+}
+
+export interface CategoryContext {
+  month: string;
+  sub: { id: number; name: string; total: number; count: number } | null;
+  parent: { id: number; name: string; icon: string | null; total: number; count: number } | null;
+}
+
+/** Totaux du mois de l'opération pour sa sous-catégorie et sa catégorie parente (même type : dépense ou revenu). */
+export function transactionContext(db: DB, id: number): CategoryContext | null {
+  const t = getTransaction(db, id);
+  if (!t || t.technical || !t.categoryId) return null;
+  const { start, end } = monthBounds(monthOf(t.date));
+  const cat = db.prepare("SELECT id, name, parent_id, icon FROM categories WHERE id = ?").get(t.categoryId) as { id: number; name: string; parent_id: number | null; icon: string | null } | undefined;
+  if (!cat) return null;
+  const sum = (categoryId: number, withChildren: boolean) =>
+    db.prepare(`SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count FROM transactions t JOIN categories c ON c.id = t.category_id
+      WHERE t.type = ? AND t.date BETWEEN ? AND ? AND ${withChildren ? "(t.category_id = ? OR c.parent_id = ?)" : "t.category_id = ?"}`)
+      .get(...(withChildren ? [t.type, start, end, categoryId, categoryId] : [t.type, start, end, categoryId])) as { total: number; count: number };
+  const parentId = cat.parent_id ?? cat.id;
+  const parent = db.prepare("SELECT id, name, icon FROM categories WHERE id = ?").get(parentId) as { id: number; name: string; icon: string | null };
+  const parentTotals = sum(parent.id, true);
+  const subTotals = cat.parent_id ? sum(cat.id, false) : null;
+  return {
+    month: monthOf(t.date),
+    sub: cat.parent_id && subTotals ? { id: cat.id, name: cat.name, total: subTotals.total, count: subTotals.count } : null,
+    parent: { id: parent.id, name: parent.name, icon: parent.icon, total: parentTotals.total, count: parentTotals.count },
+  };
 }
