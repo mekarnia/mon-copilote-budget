@@ -10,7 +10,11 @@ export function HomePage() {
   const { data: toVerify } = useToVerifyCount();
 
   if (isLoading) return <p className="text-slate-500">Chargement…</p>;
-  if (error || !data) return <p className="text-red-600">Impossible de joindre le serveur. Lancez `npm run dev` dans le dossier budget.</p>;
+  if (error || !data) return <div className="card space-y-2 text-sm">
+      <p className="font-semibold text-red-600">Le serveur de l'application ne répond pas.</p>
+      <p className="text-slate-500">Dans PowerShell, dans le dossier du projet, lancez <code>npm.cmd run dev</code> et attendez la ligne « API sur http://localhost:3001 », puis rechargez cette page.</p>
+      <button className="btn-ghost w-full" onClick={() => window.location.reload()}>Réessayer</button>
+    </div>;
 
   const remainingColor = data.remaining < 0 ? "text-red-600" : data.remaining < data.income * 0.1 ? "text-amber-600" : "text-emerald-600";
   const maxCat = data.byCategory[0]?.total ?? 1;

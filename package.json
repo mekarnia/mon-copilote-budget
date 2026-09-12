@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n api,web \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": "tsx watch server/index.ts",
+    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "tsx watch --clear-screen=false server/index.ts",
     "dev:web": "vite --host",
     "build": "vite build",
     "start": "tsx server/index.ts",
