@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": "tsx watch --clear-screen=false server/index.ts",
+    "dev:api": "tsx server/index.ts",
     "dev:web": "vite --host",
     "build": "vite build",
     "start": "tsx server/index.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "dev:api:watch": "tsx watch --clear-screen=false server/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

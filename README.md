@@ -14,7 +14,7 @@ npm run dev
 
 Sous Windows, si PowerShell refuse d'exécuter `npm` (« l'exécution de scripts est désactivée »), utilisez `npm.cmd install` et `npm.cmd run dev`, ou autorisez une fois les scripts avec `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
-Le premier démarrage de l'API peut prendre 10 à 30 secondes sous Windows. Attendez la ligne « Mon copilote budget : API sur http://localhost:3001 » avant d'ouvrir le navigateur. En cas de doute, lancez les deux parties dans deux fenêtres : `npm run dev:api` puis `npm run dev:web`.
+Le premier démarrage de l'API peut prendre 10 à 30 secondes sous Windows. Attendez la ligne « Mon copilote budget : API sur http://localhost:3001 » avant d'ouvrir le navigateur. En cas de doute, lancez les deux parties dans deux fenêtres : `npm run dev:api` puis `npm run dev:web`. Pour développer sur le serveur avec rechargement automatique : `npm run dev:api:watch`.
 
 - API : http://localhost:3001
 - Interface : http://localhost:5180 (accessible depuis le téléphone sur le même Wi‑Fi via l'adresse IP du PC, par exemple http://192.168.1.20:5180)
