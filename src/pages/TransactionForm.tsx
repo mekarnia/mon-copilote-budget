@@ -52,6 +52,9 @@ export function TransactionFormPage() {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [suggested, setSuggested] = useState<"rule" | "ai" | null>(null);
+  const [describe, setDescribe] = useState("");
+  const [showDescribe, setShowDescribe] = useState(false);
+  const insecure = typeof window !== "undefined" && !window.isSecureContext;
   const recognizerRef = useRef<ReturnType<typeof createRecognizer>>(null);
   const speechAvailable = typeof window !== "undefined" && createRecognizer() !== null;
 
@@ -158,15 +161,32 @@ export function TransactionFormPage() {
       </div>
 
       {!editId && (
-        <div className="mb-4 grid grid-cols-2 gap-2">
-          <button type="button" className={`btn ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || busy}>
-            {listening ? "⏹ J'écoute…" : "🎤 Dicter"}
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          <button type="button" className={`btn px-2 ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || insecure || busy}>
+            {listening ? "⏹ Stop" : "🎤 Dicter"}
           </button>
-          <button type="button" className="btn-ghost" onClick={() => receiptRef.current?.click()} disabled={busy}>📷 Ticket</button>
+          <button type="button" className={`btn-ghost px-2 ${showDescribe ? "ring-2 ring-brand" : ""}`} onClick={() => setShowDescribe((v) => !v)} disabled={busy}>✍️ Décrire</button>
+          <button type="button" className="btn-ghost px-2" onClick={() => receiptRef.current?.click()} disabled={busy}>📷 Ticket</button>
           <input ref={receiptRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && onReceipt(e.target.files[0])} />
         </div>
       )}
-      {!editId && !speechAvailable && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
+      {!editId && showDescribe && (
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (describe.trim()) parseSpeech.mutateAsync(describe.trim()).then(applyDraft).catch(() => undefined);
+          }}
+        >
+          <input className="input" autoFocus value={describe} onChange={(e) => setDescribe(e.target.value)} placeholder="45 euros de courses chez Carrefour hier" disabled={busy} />
+          <button className="btn-primary" disabled={!describe.trim() || busy}>OK</button>
+        </form>
+      )}
+      {!editId && showDescribe && <p className="mb-3 text-xs text-slate-500">Astuce : le micro du clavier du téléphone fonctionne dans ce champ.</p>}
+      {!editId && insecure && !showDescribe && (
+        <p className="mb-3 text-xs text-slate-500">Micro et appareil photo indisponibles sur une adresse en http:// : utilisez « Décrire » avec le micro du clavier, ou autorisez cette adresse dans chrome://flags (« Insecure origins treated as secure »).</p>
+      )}
+      {!editId && !speechAvailable && !insecure && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
       {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 45 euros de courses chez Carrefour hier »"}</p>}
       {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">🤖 Lecture en cours…</p>}
       {draftInfo && !busy && (
