@@ -221,7 +221,18 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.put("/settings", async (c) => {
     const body = (await c.req.json()) as Record<string, string>;
     const up = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-    for (const [k, v] of Object.entries(body)) if (typeof v === "string" && k.length < 40) up.run(k, v);
+    for (const [k, v] of Object.entries(body)) {
+      if (typeof v !== "string" || k.length >= 40) continue;
+      if (k === "aiKey") {
+        const key = v.trim();
+        if (key && !/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key)) {
+          throw new HttpError(400, "Ce n'est pas une clé Anthropic. Elle commence par sk-ant- et ne contient que des lettres, chiffres et tirets. Copiez-la depuis console.anthropic.com → API Keys.");
+        }
+        up.run(k, key);
+        continue;
+      }
+      up.run(k, v);
+    }
     return c.json({ ok: true });
   });
 

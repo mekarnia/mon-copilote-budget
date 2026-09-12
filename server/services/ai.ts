@@ -18,6 +18,7 @@ export class AiNotConfigured extends Error {
 export function getClient(db: DB): Anthropic {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'aiKey'").get() as { value: string } | undefined;
   if (!row?.value) throw new AiNotConfigured();
+  if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(row.value)) throw new Error("La clé IA enregistrée est invalide. Recollez-la dans Réglages, elle commence par sk-ant-.");
   return new Anthropic({ apiKey: row.value });
 }
 

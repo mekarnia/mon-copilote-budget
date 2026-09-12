@@ -297,10 +297,12 @@ function BackupSettings() {
       <div className="card space-y-3">
         <h2 className="font-semibold">Clé IA (photo de ticket, dictée, catégorisation)</h2>
         <p className="text-sm text-slate-500">Clé d'API Anthropic, stockée uniquement sur le serveur local. Sans clé, tout le reste fonctionne. {settings.aiKey ? `Clé enregistrée : ${settings.aiKey}` : "Aucune clé enregistrée."}</p>
-        <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); await saveSettings.mutateAsync({ aiKey }); setAiKey(""); }}>
-          <input className="input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder="Coller la clé" />
-          <button className="btn-primary" disabled={!aiKey}>OK</button>
+        <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); try { await saveSettings.mutateAsync({ aiKey: aiKey.trim() }); setAiKey(""); } catch { /* affiché ci-dessous */ } }}>
+          <input className="input" type="password" value={aiKey} onChange={(e) => setAiKey(e.target.value)} placeholder="sk-ant-…" autoComplete="off" />
+          <button className="btn-primary" disabled={!aiKey.trim()}>OK</button>
         </form>
+        <ErrorBanner error={saveSettings.error} />
+        {saveSettings.isSuccess && <p className="text-sm text-emerald-600">Clé enregistrée.</p>}
       </div>
     </div>
   );
