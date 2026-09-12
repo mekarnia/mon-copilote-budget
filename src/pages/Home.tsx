@@ -69,19 +69,17 @@ export function HomePage() {
         )}
       </section>
 
-      <section className="card space-y-2">
-        <h2 className="font-semibold">Prochaines factures (7 jours)</h2>
-        {data.upcoming.length === 0 ? (
-          <p className="text-sm text-slate-500">Rien à prévoir cette semaine.</p>
-        ) : (
-          data.upcoming.map((b, i) => (
+      {data.upcoming.length > 0 && (
+        <section className="card space-y-2">
+          <h2 className="font-semibold">Prochaines factures (7 jours)</h2>
+          {data.upcoming.map((b, i) => (
             <div key={i} className="flex items-center justify-between text-sm">
               <span><span className="text-slate-500">{dayLabel(b.date)}</span> · {b.label}</span>
               <Money cents={b.type === "income" ? b.amount : -b.amount} signed className={b.type === "income" ? "text-emerald-600" : ""} />
             </div>
-          ))
-        )}
-      </section>
+          ))}
+        </section>
+      )}
 
       <section className="card space-y-3">
         <div className="flex items-center justify-between">
