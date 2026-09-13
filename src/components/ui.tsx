@@ -10,7 +10,7 @@ export function Money({ cents, className = "", signed = false }: { cents: number
 /** Saisie d'un montant en euros, valeur exposée en centimes. Clavier numérique sur mobile. */
 export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }: { value: number | null; onChange: (cents: number | null) => void; autoFocus?: boolean; placeholder?: string }) {
   const [text, setText] = useState(value === null ? "" : centsToInput(value));
-  // Synchronise l'affichage quand la valeur change de l'extérieur (opération chargée, brouillon IA, remise à zéro).
+  // Synchronise l'affichage quand la valeur change de l'extérieur (transaction chargée, brouillon IA, remise à zéro).
   useEffect(() => {
     if (value === null) {
       if (text !== "" && parseEuros(text) !== null) setText("");

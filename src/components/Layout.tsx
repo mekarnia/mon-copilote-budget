@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 const tabs = [
   { to: "/", label: "Accueil", icon: "🏠" },
-  { to: "/operations", label: "Opérations", icon: "📋" },
+  { to: "/operations", label: "Transactions", icon: "📋" },
   { to: "/budgets", label: "Budgets", icon: "🎯" },
   { to: "/projets", label: "Projets", icon: "🚀" },
   { to: "/suivi", label: "Suivi", icon: "📈" },
@@ -17,7 +17,7 @@ export function Layout() {
       </main>
       <button
         onClick={() => navigate("/ajouter")}
-        aria-label="Ajouter une opération"
+        aria-label="Ajouter une transaction"
         className="fixed bottom-20 left-1/2 z-30 flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full bg-brand text-4xl font-light text-white shadow-lg active:scale-95"
       >
         +

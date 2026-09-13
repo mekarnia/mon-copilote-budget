@@ -63,11 +63,11 @@ export function ImportSettings() {
   return (
     <div className="space-y-4">
       <Back title="Importer un relevé" />
-      <p className="text-sm text-slate-500">Téléchargez le relevé au format CSV depuis le site de votre banque, puis choisissez-le ici. Les opérations arrivent « à vérifier » et vous les confirmez en un tap.</p>
+      <p className="text-sm text-slate-500">Téléchargez le relevé au format CSV depuis le site de votre banque, puis choisissez-le ici. Les transactions arrivent « à vérifier » et vous les confirmez en un tap.</p>
 
       {done && (
         <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-          ✅ {done.created} opération{done.created > 1 ? "s" : ""} importée{done.created > 1 ? "s" : ""}{done.skipped > 0 && `, ${done.skipped} ignorée${done.skipped > 1 ? "s" : ""} (doublons ou lignes illisibles)`}.
+          ✅ {done.created} transaction{done.created > 1 ? "s" : ""} importée{done.created > 1 ? "s" : ""}{done.skipped > 0 && `, ${done.skipped} ignorée${done.skipped > 1 ? "s" : ""} (doublons ou lignes illisibles)`}.
           <Link to="/operations" className="ml-1 font-semibold underline">Vérifier</Link>
         </div>
       )}
@@ -124,7 +124,7 @@ export function ImportSettings() {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={skipDuplicates} onChange={(e) => setSkipDuplicates(e.target.checked)} /> Ignorer les doublons</label>
             <ErrorBanner error={commitMut.error} />
             <button className="btn-primary w-full" disabled={toCreate === 0 || commitMut.isPending} onClick={runCommit}>
-              {commitMut.isPending ? "Import en cours…" : `Importer ${toCreate} opération${toCreate > 1 ? "s" : ""}`}
+              {commitMut.isPending ? "Import en cours…" : `Importer ${toCreate} transaction${toCreate > 1 ? "s" : ""}`}
             </button>
           </div>
         </>
@@ -140,7 +140,7 @@ export function ImportSettings() {
                 <p className="text-slate-500">{new Date(b.createdAt + "Z").toLocaleDateString("fr-FR")} · {b.createdCount} importée{b.createdCount > 1 ? "s" : ""}, {b.remaining} encore présente{b.remaining > 1 ? "s" : ""}</p>
               </div>
               {b.remaining > 0 && (
-                <button className="btn-danger px-3 py-1.5 text-xs" onClick={() => { if (confirm(`Annuler cet import et supprimer ses ${b.remaining} opérations ?`)) cancelMut.mutate(b.id); }}>Annuler</button>
+                <button className="btn-danger px-3 py-1.5 text-xs" onClick={() => { if (confirm(`Annuler cet import et supprimer ses ${b.remaining} transactions ?`)) cancelMut.mutate(b.id); }}>Annuler</button>
               )}
             </div>
           ))}

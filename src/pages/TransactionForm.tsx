@@ -181,10 +181,8 @@ export function TransactionFormPage() {
   return (
     <div className="mx-auto min-h-full max-w-lg px-4 pb-10 pt-4">
       {editId && (
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <button className="btn-ghost px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
-          <h1 className="text-lg font-bold">{toVerify ? "À vérifier" : "Modifier"}</h1>
-          <span className="w-12" />
         </div>
       )}
 
@@ -372,7 +370,7 @@ export function TransactionFormPage() {
           <button className="btn-primary text-lg" disabled={!canSave || save.isPending || busy}>{editId ? "Enregistrer" : "Ajouter"}</button>
         </div>
         {editId && (
-          <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette opération ?")) { await remove.mutateAsync(editId); navigate(-1); } }}>
+          <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette transaction ?")) { await remove.mutateAsync(editId); navigate(-1); } }}>
             Supprimer
           </button>
         )}

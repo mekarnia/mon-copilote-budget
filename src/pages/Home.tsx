@@ -44,7 +44,7 @@ export function HomePage() {
 
       {(toVerify?.count ?? 0) > 0 && (
         <Link to="/operations" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          ⚠️ {toVerify!.count} opération{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier
+          ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier
         </Link>
       )}
       {data.redBudgets.length > 0 && (

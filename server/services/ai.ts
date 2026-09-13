@@ -47,10 +47,10 @@ function catalogue(categories: Category[], wallets: Wallet[]): string {
 }
 
 function system(db: DB, today: string): string {
-  return `Tu extrais une opération financière pour une application de budget familial française.
+  return `Tu extrais une transaction financière pour une application de budget familial française.
 Aujourd'hui : ${today} (format AAAA-MM-JJ). Résous les dates relatives (hier, ce matin, lundi dernier, le 5) par rapport à cette date. Si aucune date n'est mentionnée, mets la date du jour.
 Le montant est en euros, positif. Le type est "expense" (dépense), "income" (revenu) ou "transfer" (virement entre deux portefeuilles).
-Le libellé est court : le nom du commerçant ou l'objet de l'opération, sans montant ni date.
+Le libellé est court : le nom du commerçant ou l'objet de l'transaction, sans montant ni date.
 Le moyen de paiement est "cash" si la phrase parle d'espèces, de liquide ou de cash, "card" si elle parle de carte ou CB, sinon null. Pour un paiement en espèces, choisis le portefeuille de type "especes" s'il existe.
 Si un élément essentiel est réellement ambigu (montant illisible, catégorie impossible à deviner), pose une seule question courte en français dans "question", sinon mets null.
 Ne pose pas de question pour un choix raisonnable : choisis la sous-catégorie la plus probable.
@@ -73,7 +73,7 @@ function toDraft(p: z.infer<typeof draftSchema>, source: TransactionDraft["sourc
   };
 }
 
-/** Photo de ticket -> brouillon d'opération. */
+/** Photo de ticket -> brouillon d'transaction. */
 export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jpeg" | "image/png" | "image/webp", today = todayIso()): Promise<TransactionDraft> {
   const client = getClient(db);
   const response = await client.messages.parse({
@@ -95,7 +95,7 @@ export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jp
   return toDraft(response.parsed_output, "photo");
 }
 
-/** Phrase dictée -> brouillon d'opération. */
+/** Phrase dictée -> brouillon d'transaction. */
 export async function parseSpeech(db: DB, text: string, today = todayIso()): Promise<TransactionDraft> {
   const client = getClient(db);
   const response = await client.messages.parse({
@@ -118,7 +118,7 @@ export async function suggestCategory(db: DB, label: string): Promise<number | n
     model: MODEL,
     max_tokens: 500,
     output_config: { effort: "low", format: zodOutputFormat(categorySchema) },
-    system: `Tu classes un libellé d'opération bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
+    system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
     messages: [{ role: "user", content: `Libellé : « ${label} »` }],
   });
   return response.parsed_output?.category_id ?? null;

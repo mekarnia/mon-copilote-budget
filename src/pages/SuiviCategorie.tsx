@@ -41,11 +41,11 @@ export function SuiviCategoriePage() {
         </div>
       </div>
       <div className="flex items-baseline justify-between px-1">
-        <span className="text-sm text-slate-500">{data.length} opération{data.length > 1 ? "s" : ""}</span>
+        <span className="text-sm text-slate-500">{data.length} transaction{data.length > 1 ? "s" : ""}</span>
         <Money cents={total} className="text-2xl font-bold" />
       </div>
       {isLoading && <p className="text-slate-500">Chargement…</p>}
-      {!isLoading && data.length === 0 && <Empty icon="🗒️" text="Aucune opération sur cette période." />}
+      {!isLoading && data.length === 0 && <Empty icon="🗒️" text="Aucune transaction sur cette période." />}
       {[...groups.entries()].map(([date, items]) => (
         <section key={date}>
           <h2 className="mb-1 mt-2 text-sm font-semibold text-slate-500">{range?.granularity === "month" ? `${dayLabel(date)} · ${monthLabel(date.slice(0, 7))}` : dayLabel(date)}</h2>

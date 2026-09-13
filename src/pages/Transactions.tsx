@@ -33,7 +33,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Opérations" />
+      <PageHeader title="Transactions" />
       {!onlyToVerify && !allMonths && <MonthNav month={month} onChange={setMonth} />}
       {filterCat && (
         <button className="chip w-full bg-brand/10 text-left" onClick={() => { setParams({}); setPickedMonth(null); }}>
@@ -53,14 +53,14 @@ export function TransactionsPage() {
       )}
       {(toVerify?.count ?? 0) > 0 && (
         <button className={`chip w-full text-left ${onlyToVerify ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`} onClick={() => setOnlyToVerify((v) => !v)}>
-          {onlyToVerify ? "← Retour à toutes les opérations" : `⚠️ ${toVerify!.count} opération${toVerify!.count > 1 ? "s" : ""} importée${toVerify!.count > 1 ? "s" : ""} à vérifier`}
+          {onlyToVerify ? "← Retour à toutes les transactions" : `⚠️ ${toVerify!.count} transaction${toVerify!.count > 1 ? "s" : ""} importée${toVerify!.count > 1 ? "s" : ""} à vérifier`}
         </button>
       )}
       <input className="input" placeholder="Rechercher un libellé, une catégorie…" value={q} onChange={(e) => setQ(e.target.value)} />
-      <p className="text-sm text-slate-500">{allMonths && !pickedMonth ? "Dépensé au total" : "Dépensé sur la période"} : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /> <span className="text-slate-400">· {data.length} opération{data.length > 1 ? "s" : ""}</span></p>
+      <p className="text-sm text-slate-500">{allMonths && !pickedMonth ? "Dépensé au total" : "Dépensé sur la période"} : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /> <span className="text-slate-400">· {data.length} transaction{data.length > 1 ? "s" : ""}</span></p>
 
       {isLoading && <p className="text-slate-500">Chargement…</p>}
-      {!isLoading && data.length === 0 && <Empty icon="🗒️" text="Aucune opération sur ce mois." />}
+      {!isLoading && data.length === 0 && <Empty icon="🗒️" text="Aucune transaction sur ce mois." />}
 
       {[...groups.entries()].map(([date, items]) => (
         <section key={date}>

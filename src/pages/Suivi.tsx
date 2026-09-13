@@ -121,7 +121,7 @@ function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod:
               </ul>
             )}
             <p className="text-xs opacity-70">
-              {aiGoal.isFetching && !aiGoal.data ? "Le coach rédige son conseil…" : goal.generatedBy === "ai" ? "Rédigé par l'IA d'après vos opérations." : "Calculé d'après vos opérations. Ajoutez une clé IA pour des conseils rédigés."}
+              {aiGoal.isFetching && !aiGoal.data ? "Le coach rédige son conseil…" : goal.generatedBy === "ai" ? "Rédigé par l'IA d'après vos transactions." : "Calculé d'après vos transactions. Ajoutez une clé IA pour des conseils rédigés."}
             </p>
           </div>
         )}
@@ -148,7 +148,7 @@ function CategoryList({ cats, type, period }: { cats: Cat[]; type: "expense" | "
           <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-slate-300 dark:bg-slate-600" style={{ width: `${Math.max(2, (c.total / max) * 100)}%` }} /></div>
         </Link>
       ))}
-      {cats.length > 0 && <p className="text-xs text-slate-500">Touchez une catégorie pour voir ses opérations sur la période.</p>}
+      {cats.length > 0 && <p className="text-xs text-slate-500">Touchez une catégorie pour voir ses transactions sur la période.</p>}
     </div>
   );
 }

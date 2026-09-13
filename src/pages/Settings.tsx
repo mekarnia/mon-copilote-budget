@@ -99,7 +99,7 @@ function WalletsSettings() {
             <button className="btn-primary w-full" disabled={save.isPending}>Enregistrer</button>
             {form.id && (
               <button type="button" className="btn-danger w-full" onClick={async () => {
-                if (!confirm("Supprimer ce portefeuille ? S'il contient des opérations, il sera archivé.")) return;
+                if (!confirm("Supprimer ce portefeuille ? S'il contient des transactions, il sera archivé.")) return;
                 await remove.mutateAsync(form.id!); setForm(null);
               }}>Supprimer</button>
             )}
@@ -172,7 +172,7 @@ function CategoriesSettings() {
             <button className="btn-primary w-full" disabled={save.isPending}>Enregistrer</button>
             {form.id && (
               <div className="space-y-2 rounded-xl bg-slate-100 p-3 dark:bg-slate-800">
-                <p className="text-sm">Supprimer et déplacer ses opérations vers :</p>
+                <p className="text-sm">Supprimer et déplacer ses transactions vers :</p>
                 <select className="input" value={reassign ?? ""} onChange={(e) => setReassign(e.target.value ? Number(e.target.value) : null)}>
                   <option value="">Choisir une catégorie…</option>
                   {categories.filter((c) => c.id !== form.id && c.parentId !== form.id && !c.technicalKey && c.kind === form.kind).map((c) => <option key={c.id} value={c.id}>{c.parentId ? "   " : ""}{c.name}</option>)}
@@ -207,7 +207,7 @@ function RecurrencesSettings() {
   return (
     <div className="space-y-4">
       <Back title="Récurrences" />
-      <p className="text-sm text-slate-500">Les opérations sont créées automatiquement à la date prévue et annoncées 7 jours avant sur l'Accueil.</p>
+      <p className="text-sm text-slate-500">Les transactions sont créées automatiquement à la date prévue et annoncées 7 jours avant sur l'Accueil.</p>
       {recurrences.map((r) => (
         <button key={r.id} className={`card block w-full text-left ${r.active ? "" : "opacity-60"}`} onClick={() => open(r)}>
           <div className="flex items-center justify-between">
@@ -257,7 +257,7 @@ function RecurrencesSettings() {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} /> Active</label>
             <ErrorBanner error={save.error} />
             <button className="btn-primary w-full" disabled={save.isPending || !form.amount || (form.type !== "transfer" && !form.categoryId)}>Enregistrer</button>
-            {form.id && <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette récurrence ? Les opérations déjà créées sont conservées.")) { await remove.mutateAsync(form.id!); setForm(null); } }}>Supprimer</button>}
+            {form.id && <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer cette récurrence ? Les transactions déjà créées sont conservées.")) { await remove.mutateAsync(form.id!); setForm(null); } }}>Supprimer</button>}
           </form>
         )}
       </Sheet>
@@ -288,7 +288,7 @@ function BackupSettings() {
       <div className="card space-y-3">
         <h2 className="font-semibold">Exporter</h2>
         <a className="btn-ghost w-full" href="/api/backup.json" download>Sauvegarde complète (JSON)</a>
-        <a className="btn-ghost w-full" href="/api/export.csv" download>Opérations (CSV pour Excel)</a>
+        <a className="btn-ghost w-full" href="/api/export.csv" download>Transactions (CSV pour Excel)</a>
       </div>
       <div className="card space-y-3">
         <h2 className="font-semibold">Restaurer</h2>

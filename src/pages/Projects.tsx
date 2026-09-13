@@ -72,7 +72,7 @@ export function ProjectsPage() {
             <ErrorBanner error={save.error} />
             <button className="btn-primary w-full" disabled={save.isPending || !form.target}>Enregistrer</button>
             {form.id && (
-              <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer ce projet ? Les virements déjà faits restent dans vos opérations.")) { await remove.mutateAsync(form.id!); setForm(null); } }}>
+              <button type="button" className="btn-danger w-full" onClick={async () => { if (confirm("Supprimer ce projet ? Les virements déjà faits restent dans vos transactions.")) { await remove.mutateAsync(form.id!); setForm(null); } }}>
                 Supprimer le projet
               </button>
             )}

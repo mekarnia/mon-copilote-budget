@@ -71,7 +71,7 @@ Les montants sont stockés en centimes (entiers). Les catégories techniques « 
 ## Périmètre livré (MVC 1)
 
 - Portefeuilles avec solde de départ, « Corriger le solde », archivage automatique si utilisé.
-- Opérations : dépense, revenu, virement ; photo de ticket ; auto-complétion des libellés ; recherche ; export CSV.
+- Transactions : dépense, revenu, virement ; photo de ticket ; auto-complétion des libellés ; recherche ; export CSV.
 - Récurrences mensuelles ou hebdomadaires, création automatique à l'échéance, annonce 7 jours avant.
 - Budgets mensuels par catégorie avec barres vert / orange / rouge et bannière d'alerte.
 - Projets d'épargne alimentés par virement interne, montant mensuel nécessaire pour tenir la date.
@@ -80,9 +80,9 @@ Les montants sont stockés en centimes (entiers). Les catégories techniques « 
 
 ## Périmètre livré (MVC 2, saisie sans effort)
 
-- Photo de ticket : extraction du montant, de la date, du commerçant et d'une catégorie proposée, puis confirmation en un tap. La photo reste jointe à l'opération.
+- Photo de ticket : extraction du montant, de la date, du commerçant et d'une catégorie proposée, puis confirmation en un tap. La photo reste jointe à l'transaction.
 - Dictée depuis le bouton « + » : reconnaissance vocale de Chrome, puis extraction des champs par l'IA (« 45 euros de courses chez Carrefour hier »).
-- Import du relevé bancaire CSV : détection des colonnes, format mémorisé par banque, doublons repérés, opérations créées « à vérifier », import annulable d'un coup.
+- Import du relevé bancaire CSV : détection des colonnes, format mémorisé par banque, doublons repérés, transactions créées « à vérifier », import annulable d'un coup.
 - Catégorisation : chaque catégorie choisie pour un libellé devient une règle ; l'IA n'intervient que si aucune règle ne correspond. Règles consultables dans Réglages.
 
 La photo, la dictée et la catégorisation par IA demandent une clé d'API Anthropic, à coller dans Réglages → Sauvegarde et clé IA. Elle est stockée dans la base locale, jamais dans le code ni dans le navigateur. Sans clé, tout le reste fonctionne, y compris l'import et les règles.
