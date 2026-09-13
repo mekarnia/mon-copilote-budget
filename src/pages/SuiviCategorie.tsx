@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCategories } from "@/lib/queries";
-import { Money, Empty } from "@/components/ui";
+import { Money, Empty, useGoBack } from "@/components/ui";
 import { dayLabel, monthLabel } from "@shared/dates";
 import type { Transaction } from "@shared/types";
 import { PERIODS, type PeriodKey } from "./Suivi";
@@ -28,12 +28,13 @@ export function SuiviCategoriePage() {
   for (const t of data) groups.set(t.date, [...(groups.get(t.date) ?? []), t]);
   const total = data.reduce((s, t) => s + t.amount, 0);
   const back = `/suivi?vue=${type === "income" ? "revenus" : "depenses"}&p=${period}`;
+  const goBack = useGoBack();
   const periodLabel = PERIODS.find((p) => p.value === period)?.label;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Link to={back} className="btn-ghost px-3 py-2" aria-label="Retour à l'indicateur">‹</Link>
+        <button className="btn-ghost shrink-0 px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
         <div className="min-w-0">
           <h1 className="truncate text-xl font-bold">{cat ? `${parent ? `${parent.icon ?? ""} ${parent.name} › ` : `${cat.icon ?? ""} `}${cat.name}` : "Catégorie"}</h1>
           <p className="text-xs text-slate-500">{periodLabel}{range && ` · du ${range.from.slice(8, 10)}/${range.from.slice(5, 7)} au ${range.to.slice(8, 10)}/${range.to.slice(5, 7)}`} · <Link to={back} className="text-brand">retour à l'indicateur</Link></p>

@@ -1,16 +1,11 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useCancelImport, useImportCommit, useImportPreview, useImports, useWallets, type ImportPreviewResult } from "@/lib/queries";
-import { Money, Field, ErrorBanner } from "@/components/ui";
+import { Money, Field, ErrorBanner, PageHeader } from "@/components/ui";
 import type { ImportColumnMapping } from "@shared/types";
 
 function Back({ title }: { title: string }) {
-  return (
-    <div className="mb-4 flex items-center gap-3">
-      <Link to="/reglages" className="btn-ghost px-3 py-2">‹</Link>
-      <h1 className="text-2xl font-bold">{title}</h1>
-    </div>
-  );
+  return <div className="mb-4"><PageHeader title={title} /></div>;
 }
 
 export function ImportSettings() {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useCategories, useToVerifyCount, useTransactions } from "@/lib/queries";
-import { Money, MonthNav, Empty } from "@/components/ui";
+import { Money, MonthNav, Empty, PageHeader } from "@/components/ui";
 import { currentMonth, dayLabel, monthLabel } from "@shared/dates";
 import type { Transaction } from "@shared/types";
 
@@ -33,7 +33,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Opérations</h1>
+      <PageHeader title="Opérations" />
       {!onlyToVerify && !allMonths && <MonthNav month={month} onChange={setMonth} />}
       {filterCat && (
         <button className="chip w-full bg-brand/10 text-left" onClick={() => { setParams({}); setPickedMonth(null); }}>

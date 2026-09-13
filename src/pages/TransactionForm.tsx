@@ -7,7 +7,7 @@ import {
 import { Link } from "react-router-dom";
 import { monthLabel } from "@shared/dates";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
-import { MoneyInput, Segmented, Field, ErrorBanner } from "@/components/ui";
+import { MoneyInput, Segmented, Field, ErrorBanner, useGoBack } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { todayIso } from "@shared/dates";
 import { formatCents } from "@shared/money";
@@ -26,6 +26,7 @@ const TYPE_OPTIONS: { value: TxType; label: string }[] = [
 
 export function TransactionFormPage() {
   const navigate = useNavigate();
+  const goBack = useGoBack();
   const params = useParams();
   const editId = params.id ? Number(params.id) : null;
   const { data: existing } = useTransaction(editId);
@@ -181,7 +182,7 @@ export function TransactionFormPage() {
     <div className="mx-auto min-h-full max-w-lg px-4 pb-10 pt-4">
       {editId && (
         <div className="mb-4 flex items-center justify-between">
-          <button className="btn-ghost px-3 py-2" onClick={() => navigate(-1)}>‹</button>
+          <button className="btn-ghost px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
           <h1 className="text-lg font-bold">{toVerify ? "À vérifier" : "Modifier"}</h1>
           <span className="w-12" />
         </div>

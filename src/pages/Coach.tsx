@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useChat, useClearChat, useSendChat } from "@/lib/queries";
-import { ErrorBanner } from "@/components/ui";
+import { ErrorBanner, useGoBack } from "@/components/ui";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
 const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre 300 € de vélo ?", "Où je dépense le plus ?", "Combien mettre de côté ce mois-ci ?"];
 
 export function CoachPage() {
-  const navigate = useNavigate();
+  const goBack = useGoBack();
   const { data: messages = [] } = useChat();
   const send = useSendChat();
   const clear = useClearChat();
@@ -30,7 +29,7 @@ export function CoachPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col px-4 pb-4 pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <button className="btn-ghost px-3 py-2" onClick={() => navigate(-1)}>‹</button>
+        <button className="btn-ghost px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
         <h1 className="text-lg font-bold">Mon coach</h1>
         <button className="text-sm text-slate-500" onClick={() => { if (messages.length && confirm("Effacer la conversation ?")) clear.mutate(); }}>Effacer</button>
       </div>

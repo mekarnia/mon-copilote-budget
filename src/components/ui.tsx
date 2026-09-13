@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { centsToInput, formatCents, parseEuros } from "@shared/money";
 
 export function Money({ cents, className = "", signed = false }: { cents: number; signed?: boolean; className?: string }) {
@@ -125,6 +126,31 @@ export function MonthNav({ month, onChange }: { month: string; onChange: (m: str
       <button className="btn-ghost px-3 py-2" onClick={() => shift(-1)} aria-label="Mois précédent">‹</button>
       <span className="text-lg font-semibold capitalize">{label}</span>
       <button className="btn-ghost px-3 py-2" onClick={() => shift(1)} aria-label="Mois suivant">›</button>
+    </div>
+  );
+}
+
+/** Retour à l'écran précédent, étape par étape ; l'Accueil si on est entré directement sur cette page. */
+export function useGoBack() {
+  const navigate = useNavigate();
+  return () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate("/");
+  };
+}
+
+/** En-tête de page : flèche de retour, titre, et un emplacement libre à droite. */
+export function PageHeader({ title, subtitle, right }: { title: ReactNode; subtitle?: ReactNode; right?: ReactNode }) {
+  const goBack = useGoBack();
+  return (
+    <div className="flex items-center gap-2">
+      <button className="btn-ghost shrink-0 px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-2xl font-bold">{title}</h1>
+        {subtitle && <p className="truncate text-xs text-slate-500">{subtitle}</p>}
+      </div>
+      {right}
     </div>
   );
 }

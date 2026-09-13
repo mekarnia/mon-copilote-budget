@@ -4,7 +4,7 @@ import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
   useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useWallets,
 } from "@/lib/queries";
-import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented } from "@/components/ui";
+import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
 import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
@@ -29,12 +29,7 @@ export function SettingsPage() {
 }
 
 function Back({ title }: { title: string }) {
-  return (
-    <div className="mb-4 flex items-center gap-3">
-      <Link to="/reglages" className="btn-ghost px-3 py-2">‹</Link>
-      <h1 className="text-2xl font-bold">{title}</h1>
-    </div>
-  );
+  return <div className="mb-4"><PageHeader title={title} /></div>;
 }
 
 function SettingsHome() {
@@ -48,10 +43,7 @@ function SettingsHome() {
   ];
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Link to="/" className="btn-ghost px-3 py-2">‹</Link>
-        <h1 className="text-2xl font-bold">Réglages</h1>
-      </div>
+      <PageHeader title="Réglages" />
       <div className="card divide-y divide-slate-100 p-0 dark:divide-slate-800">
         {items.map((i) => (
           <Link key={i.to} to={i.to} className="flex items-center gap-3 px-4 py-4">

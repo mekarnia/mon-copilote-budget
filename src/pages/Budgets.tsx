@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApplyBudgets, useBudgets, useCopyBudgets, useSetBudget, useSuggestBudgets, type BudgetSuggestion } from "@/lib/queries";
-import { Money, MonthNav, ProgressBar, Sheet, MoneyInput, ErrorBanner } from "@/components/ui";
+import { Money, MonthNav, ProgressBar, Sheet, MoneyInput, ErrorBanner, PageHeader } from "@/components/ui";
 import { currentMonth, monthLabel, shiftMonth } from "@shared/dates";
 import { formatCents } from "@shared/money";
 import type { BudgetLine } from "@shared/types";
@@ -27,7 +27,7 @@ export function BudgetsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Budgets</h1>
+      <PageHeader title="Budgets" />
       <MonthNav month={month} onChange={setMonth} />
       <p className="text-xs text-slate-500">Chaque mois a ses propres budgets. Modifier {monthLabel(month)} ne change pas les autres mois.</p>
 

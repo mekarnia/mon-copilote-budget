@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { Segmented } from "@/components/ui";
+import { PageHeader, Segmented } from "@/components/ui";
 import { formatCents } from "@shared/money";
 import { monthLabel } from "@shared/dates";
 
@@ -37,7 +37,7 @@ export function SuiviPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Suivi</h1>
+      <PageHeader title="Suivi" />
       <div className="scroll-row -mx-4 px-4">
         {VIEWS.map((v) => (
           <button key={v.key} className={`chip shrink-0 ${view === v.key ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => set({ vue: v.key })}>{v.label}</button>

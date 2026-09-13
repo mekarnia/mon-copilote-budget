@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useContribute, useDeleteProject, useProjects, useSaveProject, useWallets } from "@/lib/queries";
-import { Money, ProgressBar, Sheet, MoneyInput, Field, ErrorBanner, Empty } from "@/components/ui";
+import { Money, ProgressBar, Sheet, MoneyInput, Field, ErrorBanner, Empty, PageHeader } from "@/components/ui";
 import { formatCents } from "@shared/money";
 import type { Project } from "@shared/types";
 
@@ -21,10 +21,7 @@ export function ProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Projets</h1>
-        <button className="btn-primary px-3 py-2 text-sm" onClick={openNew}>Nouveau projet</button>
-      </div>
+      <PageHeader title="Projets" right={<button className="btn-primary shrink-0 px-3 py-2 text-sm" onClick={openNew}>Nouveau</button>} />
       {projects.length === 0 && <Empty icon="🎯" text="Vacances, voiture, fonds d'urgence… Créez votre premier projet d'épargne." />}
       {projects.map((p) => (
         <div key={p.id} className={`card space-y-2 ${p.done ? "opacity-70" : ""}`}>
