@@ -21,6 +21,7 @@ export function ImportSettings() {
   const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
   const [mapping, setMapping] = useState<ImportColumnMapping | null>(null);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
+  const [autoConfirmKnown, setAutoConfirmKnown] = useState(true);
   const [done, setDone] = useState<{ created: number; skipped: number } | null>(null);
 
   const effectiveWallet = walletId ?? wallets[0]?.id ?? null;
@@ -42,7 +43,7 @@ export function ImportSettings() {
 
   async function runCommit() {
     if (!preview || !mapping || effectiveWallet === null) return;
-    const batch = await commitMut.mutateAsync({ bank: bank || "Ma banque", walletId: effectiveWallet, mapping, csv: preview.csv, fileName: file?.name ?? "", skipDuplicates });
+    const batch = await commitMut.mutateAsync({ bank: bank || "Ma banque", walletId: effectiveWallet, mapping, csv: preview.csv, fileName: file?.name ?? "", skipDuplicates, autoConfirmKnown });
     setDone({ created: batch.createdCount, skipped: batch.skippedCount });
     setPreview(null);
     setFile(null);
@@ -71,7 +72,7 @@ export function ImportSettings() {
       {done && (
         <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
           ✅ {done.created} transaction{done.created > 1 ? "s" : ""} importée{done.created > 1 ? "s" : ""}{done.skipped > 0 && `, ${done.skipped} ignorée${done.skipped > 1 ? "s" : ""} (doublons ou lignes illisibles)`}.
-          <Link to="/transactions" className="ml-1 font-semibold underline">Vérifier</Link>
+          <Link to="/verifier" className="ml-1 font-semibold underline">Vérifier en masse</Link>
         </div>
       )}
 
@@ -131,6 +132,7 @@ export function ImportSettings() {
               {byAi > 0 ? <>{byAi} libellé{byAi > 1 ? "s" : ""} restant{byAi > 1 ? "s" : ""} {byAi > 1 ? "seront soumis" : "sera soumis"} à l'IA.</> : <>Aucun appel à l'IA nécessaire pour cet import.</>}
             </p>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={skipDuplicates} onChange={(e) => setSkipDuplicates(e.target.checked)} /> Ignorer les doublons</label>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoConfirmKnown} onChange={(e) => setAutoConfirmKnown(e.target.checked)} /> Valider d'office les libellés déjà connus</label>
             <ErrorBanner error={commitMut.error} />
             <button className="btn-primary w-full" disabled={toCreate === 0 || commitMut.isPending} onClick={runCommit}>
               {commitMut.isPending ? "Import en cours…" : `Importer ${toCreate} transaction${toCreate > 1 ? "s" : ""}`}

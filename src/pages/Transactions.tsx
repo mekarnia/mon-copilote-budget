@@ -17,9 +17,8 @@ export function TransactionsPage() {
   const allMonths = params.get("all") === "1";
   const [month, setMonth] = useState(params.get("month") ?? currentMonth());
   const [q, setQ] = useState("");
-  const [onlyToVerify, setOnlyToVerify] = useState(false);
   const [pickedMonth, setPickedMonth] = useState<string | null>(null); // filtre de la rangée « toutes périodes »
-  const { data: fetched = [], isLoading } = useTransactions(allMonths ? null : month, q, onlyToVerify ? "to_verify" : undefined, categoryId);
+  const { data: fetched = [], isLoading } = useTransactions(allMonths ? null : month, q, undefined, categoryId);
   const availableMonths = allMonths ? [...new Set(fetched.map((t) => t.date.slice(0, 7)))].sort().reverse() : [];
   const data = allMonths && pickedMonth ? fetched.filter((t) => t.date.startsWith(pickedMonth)) : fetched;
   const { data: categories = [] } = useCategories();
@@ -34,7 +33,7 @@ export function TransactionsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Transactions" />
-      {!onlyToVerify && !allMonths && <MonthNav month={month} onChange={setMonth} />}
+      {!allMonths && <MonthNav month={month} onChange={setMonth} />}
       {filterCat && (
         <button className="chip w-full bg-brand/10 text-left" onClick={() => { setParams({}); setPickedMonth(null); }}>
           {filterParent ? `${filterParent.icon ?? ""} ${filterParent.name} › ` : `${filterCat.icon ?? ""} `}{filterCat.name}
@@ -52,9 +51,9 @@ export function TransactionsPage() {
         </div>
       )}
       {(toVerify?.count ?? 0) > 0 && (
-        <button className={`chip w-full text-left ${onlyToVerify ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"}`} onClick={() => setOnlyToVerify((v) => !v)}>
-          {onlyToVerify ? "← Retour à toutes les transactions" : `⚠️ ${toVerify!.count} transaction${toVerify!.count > 1 ? "s" : ""} importée${toVerify!.count > 1 ? "s" : ""} à vérifier`}
-        </button>
+        <Link to="/verifier" className="chip block w-full bg-amber-50 text-left text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier <span className="font-semibold underline">Vérifier</span>
+        </Link>
       )}
       <input className="input" placeholder="Rechercher un libellé, une catégorie…" value={q} onChange={(e) => setQ(e.target.value)} />
       <p className="text-sm text-slate-500">{allMonths && !pickedMonth ? "Dépensé au total" : "Dépensé sur la période"} : <Money cents={spent} className="font-semibold text-slate-900 dark:text-slate-100" /> <span className="text-slate-400">· {data.length} transaction{data.length > 1 ? "s" : ""}</span></p>

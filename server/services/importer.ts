@@ -228,6 +228,7 @@ export async function commit(
     if (r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)) { skipped++; continue; }
     const norm = normalizeLabel(r.label);
     let categoryId = matchRule(db, r.label)?.categoryId ?? null;
+    const known = categoryId !== null; // libellé déjà validé par le passé
     // Le classement de la banque avant l'IA : il est gratuit, instantané et déjà fiable.
     if (categoryId === null) categoryId = matchBankCategory(categories, r.type!, r.bankCategory, r.bankSubCategory);
     if (categoryId === null) {
@@ -238,7 +239,7 @@ export async function commit(
     createTransaction(db, {
       type: r.type!, amount: Math.abs(r.amount), date: r.date, walletId: input.walletId, toWalletId: null,
       categoryId, projectId: null, label: r.label, note: "",
-    }, { importId, status: "to_verify", learn: false });
+    }, { importId, status: known && input.autoConfirmKnown ? "confirmed" : "to_verify", learn: false });
     created++;
   }
   db.prepare("UPDATE imports SET created_count = ?, skipped_count = ? WHERE id = ?").run(created, skipped, importId);

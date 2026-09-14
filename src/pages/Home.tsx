@@ -43,8 +43,8 @@ export function HomePage() {
       </section>
 
       {(toVerify?.count ?? 0) > 0 && (
-        <Link to="/transactions" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier
+        <Link to="/verifier" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier <span className="font-semibold underline">Vérifier</span>
         </Link>
       )}
       {data.redBudgets.length > 0 && (

@@ -6,7 +6,7 @@ import path from "node:path";
 import type { z } from "zod";
 import type { DB } from "./db.js";
 import {
-  adjustInput, budgetApplyInput, budgetCopyInput, budgetInput, categoryInput, chatInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
+  adjustInput, budgetApplyInput, budgetCopyInput, budgetInput, bulkTransactionInput, categoryInput, chatInput, contributeInput, importCommitInput, parseTextInput, projectInput, recurrenceInput,
   transactionInput, walletInput, type CategorySuggestion, type ImportColumnMapping,
 } from "../shared/types.js";
 import { currentMonth, todayIso } from "../shared/dates.js";
@@ -127,6 +127,22 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     return c.json(suggestHabits(db, { type, categoryId: categoryId ? id(categoryId) : null, amount: amount ? Number(amount) : null }));
   });
   api.get("/transactions/to-verify-count", (c) => c.json({ count: tx.countToVerify(db) }));
+  /** Valider, reclasser ou supprimer d'un coup les lignes cochées après un import. */
+  api.post("/transactions/bulk", async (c) => {
+    const { ids, action, categoryId } = parse(bulkTransactionInput, await c.req.json());
+    if (action === "recategorize") {
+      if (categoryId === null) throw new HttpError(400, "Choisissez une catégorie");
+      return c.json({ done: tx.recategorizeMany(db, ids, categoryId) });
+    }
+    if (action === "delete") {
+      for (const i of ids) {
+        const t = tx.getTransaction(db, i);
+        if (t?.photoPath) fs.rmSync(path.join(uploadsDir, path.basename(t.photoPath)), { force: true });
+      }
+      return c.json({ done: tx.deleteMany(db, ids) });
+    }
+    return c.json({ done: tx.confirmMany(db, ids) });
+  });
   api.post("/transactions/:id/confirm", (c) => {
     const t = tx.confirmTransaction(db, id(c.req.param("id")));
     return t ? c.json(t) : c.json({ error: "Introuvable" }, 404);

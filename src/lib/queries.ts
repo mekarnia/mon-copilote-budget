@@ -91,6 +91,10 @@ export const useRestoreBackup = () => useWrite((data: unknown) => api.post("/api
 
 // ---- MVC 2 ----
 export const useConfirmTransaction = () => useWrite((id: number) => api.post<Transaction>(`/api/transactions/${id}/confirm`));
+/** Valider, reclasser ou supprimer une sélection entière de lignes importées. */
+export const useBulkTransactions = () =>
+  useWrite((body: { ids: number[]; action: "confirm" | "recategorize" | "delete"; categoryId: number | null }) =>
+    api.post<{ done: number }>("/api/transactions/bulk", body));
 export const categorize = (label: string) => api.get<CategorySuggestion>(`/api/categorize?label=${encodeURIComponent(label)}`);
 export const useParseSpeech = () => useMutation({ mutationFn: (text: string) => api.post<TransactionDraft>("/api/ai/parse", { text }) });
 export const useExtractReceipt = () =>

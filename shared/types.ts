@@ -281,8 +281,18 @@ export const importCommitInput = z.object({
   csv: z.string().min(1),
   fileName: z.string().max(200).default(""),
   skipDuplicates: z.boolean().default(true),
+  /** Valider directement les libellés déjà connus d'une règle apprise : inutile de les revérifier. */
+  autoConfirmKnown: z.boolean().default(true),
 });
 export type ImportCommitInput = z.infer<typeof importCommitInput>;
+
+/** Validation, reclassement ou suppression d'une sélection de transactions. */
+export const bulkTransactionInput = z.object({
+  ids: z.array(z.number().int()).min(1).max(2000),
+  action: z.enum(["confirm", "recategorize", "delete"]),
+  categoryId: z.number().int().nullable().default(null),
+});
+export type BulkTransactionInput = z.infer<typeof bulkTransactionInput>;
 
 export interface ImportBatch {
   id: number;

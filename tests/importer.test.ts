@@ -52,7 +52,7 @@ describe("import de relevé", () => {
     expect(p.rows.map((r) => r.categorySource)).toEqual(["bank", "bank", "bank", "ai"]);
 
     let appelsIa = 0;
-    const batch = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV_CATEGORISE, fileName: "releve.csv", skipDuplicates: true }, async () => { appelsIa++; return null; });
+    const batch = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV_CATEGORISE, fileName: "releve.csv", skipDuplicates: true, autoConfirmKnown: true }, async () => { appelsIa++; return null; });
     expect(batch.createdCount).toBe(4);
     expect(appelsIa).toBe(1); // seule la ligne que la banque n'a pas classée
     const imported = listTransactions(db, { status: "to_verify" });
@@ -75,16 +75,18 @@ describe("import de relevé", () => {
     const courant = walletId(db, "Compte courant");
     createTransaction(db, { type: "expense", amount: 1, date: "2026-08-01", walletId: courant, toWalletId: null, categoryId: catId(db, "Électricité et gaz"), projectId: null, label: "EDF", note: "" });
     const p = preview(db, CSV, courant, null);
-    const batch = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV, fileName: "releve.csv", skipDuplicates: true }, async () => null);
+    const batch = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV, fileName: "releve.csv", skipDuplicates: true, autoConfirmKnown: true }, async () => null);
     expect(batch.createdCount).toBe(4);
+    // EDF est déjà connu d'une règle apprise : validé d'office, il ne repasse pas par la vérification.
+    const confirmed = listTransactions(db, { status: "confirmed" });
+    expect(confirmed.find((t) => t.label.includes("EDF"))!.categoryName).toBe("Électricité et gaz");
     const imported = listTransactions(db, { status: "to_verify" });
-    expect(imported).toHaveLength(4);
-    expect(imported.find((t) => t.label.includes("EDF"))!.categoryName).toBe("Électricité et gaz");
+    expect(imported).toHaveLength(3);
     expect(imported.find((t) => t.label.includes("CARREFOUR"))!.categoryName).toBe("Divers");
     expect(imported.find((t) => t.label.includes("SALAIRE"))!.categoryName).toBe("Autres revenus");
     expect(preview(db, CSV, courant, "ma banque").savedMapping).toBe(true);
     // Un second import du même fichier ne crée rien.
-    const again = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV, fileName: "releve.csv", skipDuplicates: true }, async () => null);
+    const again = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV, fileName: "releve.csv", skipDuplicates: true, autoConfirmKnown: true }, async () => null);
     expect(again.createdCount).toBe(0);
     expect(cancelImport(db, batch.id)).toBe(4);
     expect(listTransactions(db, { status: "to_verify" })).toHaveLength(0);

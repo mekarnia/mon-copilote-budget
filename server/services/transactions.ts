@@ -113,6 +113,34 @@ export function confirmTransaction(db: DB, id: number): Transaction | null {
   return getTransaction(db, id);
 }
 
+/**
+ * Validation en masse des lignes importées : même effet qu'une validation une par une
+ * (la règle libellé -> catégorie est apprise), mais en une seule requête.
+ */
+export function confirmMany(db: DB, ids: number[]): number {
+  let n = 0;
+  for (const id of ids) if (confirmTransaction(db, id)) n++;
+  return n;
+}
+
+/** Reclasse puis valide une sélection : corriger tout un groupe mal catégorisé d'un coup. */
+export function recategorizeMany(db: DB, ids: number[], categoryId: number): number {
+  const stmt = db.prepare("UPDATE transactions SET category_id = ? WHERE id = ? AND type != 'transfer'");
+  let n = 0;
+  for (const id of ids) {
+    if (Number(stmt.run(categoryId, id).changes) === 0) continue;
+    confirmTransaction(db, id);
+    n++;
+  }
+  return n;
+}
+
+export function deleteMany(db: DB, ids: number[]): number {
+  let n = 0;
+  for (const id of ids) if (deleteTransaction(db, id)) n++;
+  return n;
+}
+
 export function countToVerify(db: DB): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM transactions WHERE status = 'to_verify'").get() as { n: number }).n;
 }

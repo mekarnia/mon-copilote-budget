@@ -9,6 +9,7 @@ import { SettingsPage } from "./pages/Settings";
 import { CoachPage } from "./pages/Coach";
 import { SuiviPage } from "./pages/Suivi";
 import { SuiviCategoriePage } from "./pages/SuiviCategorie";
+import { VerifierPage } from "./pages/Verifier";
 
 /** Ancienne adresse d'une transaction : redirection pour les favoris déjà enregistrés. */
 function RedirectOperation() {
@@ -22,6 +23,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/transactions" element={<TransactionsPage />} />
+        <Route path="/verifier" element={<VerifierPage />} />
         <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/projets" element={<ProjectsPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
