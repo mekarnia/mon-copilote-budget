@@ -236,6 +236,10 @@ export interface ImportColumnMapping {
   amount: number | null;
   debit: number | null;
   credit: number | null;
+  /** Colonne « Catégorie » de la banque, quand le relevé en contient une. */
+  category: number | null;
+  /** Colonne « Sous-catégorie » de la banque. */
+  subCategory: number | null;
   dateFormat: "dmy" | "ymd" | "mdy";
 }
 
@@ -246,6 +250,11 @@ export interface ImportPreviewRow {
   type: TxType | null;
   duplicate: boolean;
   error: string | null;
+  /** Classement d'origine de la banque, tel quel. */
+  bankCategory: string;
+  bankSubCategory: string;
+  /** D'où viendra la catégorie : règle apprise, classement de la banque, ou IA. */
+  categorySource: "rule" | "bank" | "ai" | null;
 }
 
 export interface ImportPreview {
@@ -265,6 +274,8 @@ export const importCommitInput = z.object({
     amount: z.number().int().nullable(),
     debit: z.number().int().nullable(),
     credit: z.number().int().nullable(),
+    category: z.number().int().nullable().default(null),
+    subCategory: z.number().int().nullable().default(null),
     dateFormat: z.enum(["dmy", "ymd", "mdy"]),
   }),
   csv: z.string().min(1),

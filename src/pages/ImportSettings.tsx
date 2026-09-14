@@ -49,6 +49,9 @@ export function ImportSettings() {
   }
 
   const valid = preview?.rows.filter((r) => !r.error) ?? [];
+  const retained = valid.filter((r) => !(skipDuplicates && r.duplicate));
+  const byBank = retained.filter((r) => r.categorySource === "bank" || r.categorySource === "rule").length;
+  const byAi = retained.filter((r) => r.categorySource === "ai").length;
   const dupes = valid.filter((r) => r.duplicate).length;
   const errors = (preview?.rows.length ?? 0) - valid.length;
   const toCreate = valid.length - (skipDuplicates ? dupes : 0);
@@ -106,8 +109,10 @@ export function ImportSettings() {
               <Field label="Montant (signé)"><select className="input" value={mapping.amount ?? ""} onChange={(e) => updateMapping({ amount: num(e.target.value) })}>{colOptions(true)}</select></Field>
               <Field label="Débit"><select className="input" value={mapping.debit ?? ""} onChange={(e) => updateMapping({ debit: num(e.target.value), amount: e.target.value ? null : mapping.amount })}>{colOptions(true)}</select></Field>
               <Field label="Crédit"><select className="input" value={mapping.credit ?? ""} onChange={(e) => updateMapping({ credit: num(e.target.value), amount: e.target.value ? null : mapping.amount })}>{colOptions(true)}</select></Field>
+              <Field label="Catégorie de la banque"><select className="input" value={mapping.category ?? ""} onChange={(e) => updateMapping({ category: num(e.target.value) })}>{colOptions(true)}</select></Field>
+              <Field label="Sous-catégorie de la banque"><select className="input" value={mapping.subCategory ?? ""} onChange={(e) => updateMapping({ subCategory: num(e.target.value) })}>{colOptions(true)}</select></Field>
             </div>
-            <p className="text-xs text-slate-500">Choisissez soit une colonne Montant signé, soit Débit et Crédit.</p>
+            <p className="text-xs text-slate-500">Choisissez soit une colonne Montant signé, soit Débit et Crédit. Si votre relevé contient déjà un classement, indiquez-le : il sera repris tel quel, sans appeler l'IA.</p>
           </div>
 
           <div className="card space-y-2">
@@ -121,6 +126,10 @@ export function ImportSettings() {
                 </div>
               ))}
             </div>
+            <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {byBank > 0 && <>{byBank} ligne{byBank > 1 ? "s" : ""} classée{byBank > 1 ? "s" : ""} sans IA (règles apprises et classement du relevé). </>}
+              {byAi > 0 ? <>{byAi} libellé{byAi > 1 ? "s" : ""} restant{byAi > 1 ? "s" : ""} {byAi > 1 ? "seront soumis" : "sera soumis"} à l'IA.</> : <>Aucun appel à l'IA nécessaire pour cet import.</>}
+            </p>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={skipDuplicates} onChange={(e) => setSkipDuplicates(e.target.checked)} /> Ignorer les doublons</label>
             <ErrorBanner error={commitMut.error} />
             <button className="btn-primary w-full" disabled={toCreate === 0 || commitMut.isPending} onClick={runCommit}>

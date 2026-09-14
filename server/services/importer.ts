@@ -3,6 +3,8 @@ import type { ImportBatch, ImportColumnMapping, ImportCommitInput, ImportPreview
 import { addDays } from "../../shared/dates.js";
 import { createTransaction } from "./transactions.js";
 import { matchRule, normalizeLabel } from "./rules.js";
+import { listCategories } from "./categories.js";
+import { matchBankCategory } from "./bankCategories.js";
 
 // ---------- Lecture du fichier ----------
 
@@ -84,6 +86,8 @@ const HEADER_HINTS = {
   amount: /^montant$|^amount$|somme|valeur/i,
   debit: /d[ée]bit|sortie/i,
   credit: /cr[ée]dit|entr[ée]e/i,
+  subCategory: /sous[\s_-]*cat[ée]gorie/i,
+  category: /cat[ée]gorie|rubrique/i,
 };
 
 /** Devine la correspondance des colonnes à partir de l'en-tête et du contenu. */
@@ -94,12 +98,14 @@ export function detectMapping(columns: string[], sample: string[][]): ImportColu
   let amount = find(HEADER_HINTS.amount);
   let debit = find(HEADER_HINTS.debit);
   let credit = find(HEADER_HINTS.credit);
+  const subCategory = find(HEADER_HINTS.subCategory);
+  const category = columns.findIndex((c, i) => i !== subCategory && HEADER_HINTS.category.test(c));
   const colValues = (i: number) => sample.map((r) => r[i] ?? "");
   if (date < 0) date = columns.findIndex((_, i) => colValues(i).filter(Boolean).every((v) => /^\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}/.test(v)));
   if (amount < 0 && debit < 0) {
     amount = columns.findIndex((_, i) => i !== date && colValues(i).filter(Boolean).every((v) => parseAmount(v) !== null));
   }
-  if (label < 0) label = columns.findIndex((_, i) => i !== date && i !== amount && i !== debit && i !== credit && colValues(i).some((v) => /[a-zA-Z]{3,}/.test(v)));
+  if (label < 0) label = columns.findIndex((_, i) => i !== date && i !== amount && i !== debit && i !== credit && i !== category && i !== subCategory && colValues(i).some((v) => /[a-zA-Z]{3,}/.test(v)));
   if (debit >= 0 && credit < 0) credit = null as unknown as number;
   return {
     date: Math.max(0, date),
@@ -107,6 +113,8 @@ export function detectMapping(columns: string[], sample: string[][]): ImportColu
     amount: amount >= 0 ? amount : null,
     debit: debit >= 0 ? debit : null,
     credit: credit !== null && credit >= 0 ? credit : null,
+    category: category >= 0 ? category : null,
+    subCategory: subCategory >= 0 ? subCategory : null,
     dateFormat: detectDateFormat(colValues(Math.max(0, date))),
   };
 }
@@ -119,7 +127,9 @@ function mappingKey(bank: string) {
 
 export function savedMapping(db: DB, bank: string): ImportColumnMapping | null {
   const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(mappingKey(bank)) as { value: string } | undefined;
-  return row ? (JSON.parse(row.value) as ImportColumnMapping) : null;
+  if (!row) return null;
+  const saved = JSON.parse(row.value) as ImportColumnMapping;
+  return { ...saved, category: saved.category ?? null, subCategory: saved.subCategory ?? null };
 }
 
 export function saveMapping(db: DB, bank: string, mapping: ImportColumnMapping): void {
@@ -146,7 +156,11 @@ export function applyMapping(rows: string[][], mapping: ImportColumnMapping): Im
       else if (cred !== null && cred !== 0) amount = Math.abs(cred);
     }
     const error = !date ? "Date illisible" : amount === null || amount === 0 ? "Montant illisible" : null;
-    return { date, label, amount, type: amount === null ? null : amount < 0 ? "expense" : "income", duplicate: false, error };
+    const cell = (i: number | null) => (i === null ? "" : (r[i] ?? "").trim().slice(0, 80));
+    return {
+      date, label, amount, type: amount === null ? null : amount < 0 ? "expense" : "income", duplicate: false, error,
+      bankCategory: cell(mapping.category), bankSubCategory: cell(mapping.subCategory), categorySource: null,
+    };
   });
 }
 
@@ -179,7 +193,19 @@ export function preview(db: DB, csv: string, walletId: number, bank: string | nu
   const mapping = override ?? saved ?? detectMapping(columns, body.slice(0, 20));
   const rows = applyMapping(body, mapping);
   markDuplicates(db, rows, walletId);
+  markCategorySource(db, rows);
   return { columns, sample: body.slice(0, 5), mapping, savedMapping: saved !== null && !override, rows };
+}
+
+/** Indique pour chaque ligne si sa catégorie viendra d'une règle apprise, du relevé, ou de l'IA. */
+export function markCategorySource(db: DB, rows: ImportPreviewRow[]): void {
+  const categories = listCategories(db);
+  for (const r of rows) {
+    if (r.error || r.type === null) { r.categorySource = null; continue; }
+    if (matchRule(db, r.label)) r.categorySource = "rule";
+    else if (matchBankCategory(categories, r.type, r.bankCategory, r.bankSubCategory) !== null) r.categorySource = "bank";
+    else r.categorySource = "ai";
+  }
 }
 
 // ---------- Validation de l'import ----------
@@ -196,11 +222,14 @@ export async function commit(
   const res = db.prepare("INSERT INTO imports (bank, wallet_id, file_name) VALUES (?, ?, ?)").run(input.bank, input.walletId, input.fileName);
   const importId = Number(res.lastInsertRowid);
   let created = 0, skipped = 0;
+  const categories = listCategories(db);
   const cache = new Map<string, number | null>();
   for (const r of rows) {
     if (r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)) { skipped++; continue; }
     const norm = normalizeLabel(r.label);
     let categoryId = matchRule(db, r.label)?.categoryId ?? null;
+    // Le classement de la banque avant l'IA : il est gratuit, instantané et déjà fiable.
+    if (categoryId === null) categoryId = matchBankCategory(categories, r.type!, r.bankCategory, r.bankSubCategory);
     if (categoryId === null) {
       if (!cache.has(norm)) cache.set(norm, await categorize(r.label));
       categoryId = cache.get(norm) ?? null;

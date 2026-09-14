@@ -10,6 +10,14 @@ const CSV = `Date;Libellé;Débit;Crédit
 12/09/2026;"CB BOULANGERIE ""AU BON PAIN""";3,20;
 `;
 
+// Format réel d'un export bancaire français : la banque fournit déjà son propre classement.
+const CSV_CATEGORISE = `Date operation;Categorie operation;Sous Categorie operation;Libelle operation;Montant operation
+10-09-2026;Vie Quotidienne;Alimentation, supermarché;CB CARREFOUR MARKET;-45,30
+07-09-2026;Abonnements et Telephonie;Téléphone;PRELEVEMENT MINT ENERGIE;-32,14
+01-09-2026;Revenus;Salaires et revenus d'activité;VIR SALAIRE SEPTEMBRE;2500,00
+05-09-2026;Zzz;Rubrique inconnue;ACHAT MYSTERE;-10,00
+`;
+
 describe("import de relevé", () => {
   it("lit les montants français", () => {
     expect(parseAmount("1 234,56")).toBe(123456);
@@ -34,6 +42,24 @@ describe("import de relevé", () => {
     const rows = applyMapping(table.slice(1), mapping);
     expect(rows[0]).toMatchObject({ date: "2026-09-10", amount: -4530, type: "expense", error: null });
     expect(rows[2]).toMatchObject({ date: "2026-09-01", amount: 250000, type: "income" });
+  });
+
+  it("reprend le classement de la banque et n'appelle l'IA que pour le reste", async () => {
+    const db = memDb();
+    const courant = walletId(db, "Compte courant");
+    const p = preview(db, CSV_CATEGORISE, courant, null);
+    expect(p.mapping).toMatchObject({ date: 0, category: 1, subCategory: 2, label: 3, amount: 4, dateFormat: "dmy" });
+    expect(p.rows.map((r) => r.categorySource)).toEqual(["bank", "bank", "bank", "ai"]);
+
+    let appelsIa = 0;
+    const batch = await commit(db, { bank: "Ma banque", walletId: courant, mapping: p.mapping, csv: CSV_CATEGORISE, fileName: "releve.csv", skipDuplicates: true }, async () => { appelsIa++; return null; });
+    expect(batch.createdCount).toBe(4);
+    expect(appelsIa).toBe(1); // seule la ligne que la banque n'a pas classée
+    const imported = listTransactions(db, { status: "to_verify" });
+    expect(imported.find((t) => t.label.includes("CARREFOUR"))!.categoryName).toBe("Supermarché");
+    expect(imported.find((t) => t.label.includes("MINT"))!.categoryName).toBe("Internet et téléphone");
+    expect(imported.find((t) => t.label.includes("SALAIRE"))!.categoryName).toBe("Salaire");
+    expect(imported.find((t) => t.label.includes("MYSTERE"))!.categoryName).toBe("Divers");
   });
 
   it("détecte les doublons avec les opérations déjà saisies", () => {

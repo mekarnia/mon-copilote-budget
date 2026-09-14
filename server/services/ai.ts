@@ -8,6 +8,9 @@ import { listCategories } from "./categories.js";
 import { listWallets } from "./wallets.js";
 
 const MODEL = "claude-opus-5";
+// Classer un libellé dans une catégorie est une tâche simple et répétitive :
+// Haiku la fait aussi bien pour environ un cinquième du prix, ce qui compte à l'import d'un relevé.
+const FAST_MODEL = "claude-haiku-4-5-20251001";
 
 export class AiNotConfigured extends Error {
   constructor() {
@@ -115,9 +118,9 @@ const categorySchema = z.object({ category_id: z.number().int().nullable() });
 export async function suggestCategory(db: DB, label: string): Promise<number | null> {
   const client = getClient(db);
   const response = await client.messages.parse({
-    model: MODEL,
+    model: FAST_MODEL,
     max_tokens: 500,
-    output_config: { effort: "low", format: zodOutputFormat(categorySchema) },
+    output_config: { format: zodOutputFormat(categorySchema) },
     system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
     messages: [{ role: "user", content: `Libellé : « ${label} »` }],
   });
