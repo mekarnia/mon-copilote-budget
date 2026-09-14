@@ -43,7 +43,7 @@ export function HomePage() {
       </section>
 
       {(toVerify?.count ?? 0) > 0 && (
-        <Link to="/operations" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        <Link to="/transactions" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
           ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier
         </Link>
       )}
@@ -60,7 +60,7 @@ export function HomePage() {
           <p className="text-sm text-slate-500">Aucune dépense ce mois-ci. Appuyez sur + pour commencer.</p>
         ) : (
           data.byCategory.slice(0, 5).map((c) => (
-            <Link key={c.categoryId} to={`/operations?categoryId=${c.categoryId}&all=1`} className="block">
+            <Link key={c.categoryId} to={`/transactions?categoryId=${c.categoryId}&all=1`} className="block">
               <div className="mb-1 flex justify-between text-sm">
                 <span>{c.icon} {c.name}</span>
                 <span><Money cents={c.total} className="font-semibold" /> <span className="text-slate-400">›</span></span>

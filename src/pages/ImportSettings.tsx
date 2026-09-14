@@ -68,7 +68,7 @@ export function ImportSettings() {
       {done && (
         <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
           ✅ {done.created} transaction{done.created > 1 ? "s" : ""} importée{done.created > 1 ? "s" : ""}{done.skipped > 0 && `, ${done.skipped} ignorée${done.skipped > 1 ? "s" : ""} (doublons ou lignes illisibles)`}.
-          <Link to="/operations" className="ml-1 font-semibold underline">Vérifier</Link>
+          <Link to="/transactions" className="ml-1 font-semibold underline">Vérifier</Link>
         </div>
       )}
 

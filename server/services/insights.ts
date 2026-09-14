@@ -40,7 +40,7 @@ export function computeInsights(db: DB, today = todayIso()): Insight[] {
     if (r.amount < 5000) continue;
     const a = avgStmt.get(r.parent, addDays(today, -90), addDays(today, -1), r.id) as { avg: number | null; n: number };
     if (a.n >= 3 && a.avg && r.amount > a.avg * 2) {
-      out.push({ kind: "unusual_expense", severity: "info", title: `Dépense inhabituelle : ${r.label || r.category}`, text: `${formatCents(r.amount)} le ${r.date.slice(8, 10)}/${r.date.slice(5, 7)}, contre ${formatCents(Math.round(a.avg))} en moyenne en ${r.category}.`, amount: r.amount, link: `/operation/${r.id}` });
+      out.push({ kind: "unusual_expense", severity: "info", title: `Dépense inhabituelle : ${r.label || r.category}`, text: `${formatCents(r.amount)} le ${r.date.slice(8, 10)}/${r.date.slice(5, 7)}, contre ${formatCents(Math.round(a.avg))} en moyenne en ${r.category}.`, amount: r.amount, link: `/transaction/${r.id}` });
     }
   }
 

@@ -51,7 +51,7 @@ export function SuiviCategoriePage() {
           <h2 className="mb-1 mt-2 text-sm font-semibold text-slate-500">{range?.granularity === "month" ? `${dayLabel(date)} · ${monthLabel(date.slice(0, 7))}` : dayLabel(date)}</h2>
           <div className="card divide-y divide-slate-100 p-0 dark:divide-slate-800">
             {items.map((t) => (
-              <Link key={t.id} to={`/operation/${t.id}`} className="flex items-center gap-3 px-4 py-3">
+              <Link key={t.id} to={`/transaction/${t.id}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{t.label || t.categoryName}</p>
                   <p className="truncate text-sm text-slate-500">{t.time && <span className="mr-1 tabular-nums">{t.time}</span>}{t.categoryName} · {t.paymentMethod === "cash" ? "Espèces" : t.paymentMethod === "card" ? "Carte" : t.walletName}</p>

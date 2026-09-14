@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/Home";
 import { TransactionsPage } from "./pages/Transactions";
@@ -10,12 +10,18 @@ import { CoachPage } from "./pages/Coach";
 import { SuiviPage } from "./pages/Suivi";
 import { SuiviCategoriePage } from "./pages/SuiviCategorie";
 
+/** Ancienne adresse d'une transaction : redirection pour les favoris déjà enregistrés. */
+function RedirectOperation() {
+  const { id } = useParams();
+  return <Navigate to={`/transaction/${id}`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/operations" element={<TransactionsPage />} />
+        <Route path="/transactions" element={<TransactionsPage />} />
         <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/projets" element={<ProjectsPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
@@ -24,7 +30,10 @@ export default function App() {
       </Route>
       <Route path="/ajouter" element={<TransactionFormPage />} />
       <Route path="/coach" element={<CoachPage />} />
-      <Route path="/operation/:id" element={<TransactionFormPage />} />
+      <Route path="/transaction/:id" element={<TransactionFormPage />} />
+      {/* Anciennes adresses, conservées pour les favoris et les raccourcis déjà enregistrés. */}
+      <Route path="/operations" element={<Navigate to="/transactions" replace />} />
+      <Route path="/operation/:id" element={<RedirectOperation />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

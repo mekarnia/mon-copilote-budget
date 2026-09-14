@@ -69,7 +69,7 @@ export function TransactionsPage() {
             {items.map((t) => {
               const a = amountOf(t);
               return (
-                <Link key={t.id} to={`/operation/${t.id}`} className="flex items-center gap-3 px-4 py-3">
+                <Link key={t.id} to={`/transaction/${t.id}`} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">
                       {t.type === "transfer" ? `${t.walletName} → ${t.toWalletName}` : t.label || t.categoryName}
