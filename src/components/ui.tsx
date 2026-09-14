@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { centsToInput, formatCents, parseEuros } from "@shared/money";
+import { CURRENCY_SYMBOL, centsToInput, formatCents, parseEuros } from "@shared/money";
 
 export function Money({ cents, className = "", signed = false }: { cents: number; signed?: boolean; className?: string }) {
   const sign = signed ? (cents > 0 ? "+" : "") : "";
   return <span className={`tabular-nums ${className}`}>{sign}{formatCents(cents)}</span>;
 }
 
-/** Saisie d'un montant en euros, valeur exposée en centimes. Clavier numérique sur mobile. */
+/** Saisie d'un montant en dinars, valeur exposée en centimes. Clavier numérique sur mobile. */
 export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }: { value: number | null; onChange: (cents: number | null) => void; autoFocus?: boolean; placeholder?: string }) {
   const [text, setText] = useState(value === null ? "" : centsToInput(value));
   // Synchronise l'affichage quand la valeur change de l'extérieur (transaction chargée, brouillon IA, remise à zéro).
@@ -24,7 +24,7 @@ export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }:
       <input
         inputMode="decimal"
         autoFocus={autoFocus}
-        className="input pr-10 text-3xl font-bold"
+        className="input pr-14 text-3xl font-bold"
         placeholder={placeholder}
         value={text}
         onChange={(e) => {
@@ -32,7 +32,7 @@ export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }:
           onChange(parseEuros(e.target.value));
         }}
       />
-      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-2xl text-slate-400">€</span>
+      <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xl font-semibold text-slate-400">{CURRENCY_SYMBOL}</span>
     </div>
   );
 }

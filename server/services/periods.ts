@@ -133,8 +133,8 @@ export function templateGoal(base: PeriodStats, projectName: string | null, topL
   if (base.total <= 0) return null;
   const candidates = [base.total * 0.8];
   if (base.previousTotal > 0) candidates.push(base.previousTotal);
-  let target = Math.floor(Math.min(...candidates) / 1000) * 1000;
-  target = Math.max(target, Math.floor((base.total * 0.5) / 1000) * 1000);
+  let target = Math.floor(Math.min(...candidates) / 10000) * 10000;
+  target = Math.max(target, Math.floor((base.total * 0.5) / 10000) * 10000);
   if (target <= 0 || target >= base.total) return null;
   const actions: string[] = [];
   const top = topLabels[0];

@@ -81,8 +81,8 @@ export interface BudgetSuggestion {
   reason: string;
 }
 
-/** Arrondi à la dizaine d'euros supérieure. */
-const roundUp10 = (cents: number) => Math.ceil(cents / 1000) * 1000;
+/** Arrondi à la centaine de dinars supérieure. */
+const roundUp100 = (cents: number) => Math.ceil(cents / 10000) * 10000;
 
 /** Suggestion déterministe pour `month`, à partir des trois mois précédents. */
 export function suggestBudgets(db: DB, month: string): BudgetSuggestion[] {
@@ -103,13 +103,13 @@ export function suggestBudgets(db: DB, month: string): BudgetSuggestion[] {
       suggested = prev;
       reason = "Aucune dépense sur trois mois, budget précédent conservé.";
     } else if (prev > 0 && last > prev) {
-      suggested = roundUp10(Math.max(average3, last) * 1.05);
+      suggested = roundUp100(Math.max(average3, last) * 1.05);
       reason = `Dépassé le mois dernier (${formatCents(last)} pour ${formatCents(prev)}) : budget relevé au niveau réel.`;
     } else if (prev > 0 && saved > prev * 0.25) {
-      suggested = roundUp10(Math.max(average3 * 1.1, last * 1.15));
+      suggested = roundUp100(Math.max(average3 * 1.1, last * 1.15));
       reason = `${formatCents(saved)} économisés le mois dernier : budget resserré vers la dépense réelle.`;
     } else {
-      suggested = roundUp10(average3 * 1.05);
+      suggested = roundUp100(average3 * 1.05);
       reason = `Moyenne des trois derniers mois (${formatCents(average3)}) avec 5 % de marge.`;
     }
     out.push({ categoryId: c.id, categoryName: c.name, icon: c.icon, previousBudget: prev, lastSpent: last, average3, saved, suggested, reason });

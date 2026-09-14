@@ -39,9 +39,9 @@ export function parseCsv(text: string, delimiter = detectDelimiter(text)): strin
   return rows;
 }
 
-/** "1 234,56" | "-12.50" | "12,50 €" -> centimes. */
+/** "1 234,56" | "-12.50" | "12,50 DA" -> centimes. */
 export function parseAmount(raw: string): number | null {
-  let s = raw.replace(/\s| |€|EUR/g, "");
+  let s = raw.replace(/\s| /g, "").replace(/DA|DZD|€|EUR/gi, "");
   if (!s) return null;
   const negative = /^\(.*\)$/.test(s) || s.startsWith("-");
   s = s.replace(/[()\-+]/g, "");

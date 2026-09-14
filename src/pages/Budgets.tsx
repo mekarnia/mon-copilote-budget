@@ -113,7 +113,7 @@ export function BudgetsPage() {
                   </label>
                   <input
                     inputMode="decimal"
-                    className="input w-28 py-1.5 text-right font-semibold"
+                    className="input w-32 py-1.5 text-right font-semibold"
                     value={(it.suggested / 100).toFixed(0)}
                     onChange={(e) => {
                       const v = Math.round(Number(e.target.value.replace(",", ".")) * 100);

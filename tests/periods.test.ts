@@ -11,9 +11,9 @@ function exp(db: ReturnType<typeof memDb>, amount: number, date: string, cat: st
 describe("périodes", () => {
   it("l'objectif de secours ne descend jamais sous la moitié du niveau actuel", () => {
     const db = memDb();
-    exp(db, 10000, "2026-09-10", "Restaurant"); exp(db, 1000, "2026-08-01", "Restaurant");
+    exp(db, 1000000, "2026-09-10", "Restaurant"); exp(db, 100000, "2026-08-01", "Restaurant");
     const a = avoidableStats(db, "1m", TODAY);
-    expect(a.goal?.target).toBe(5000);
+    expect(a.goal?.target).toBe(500000); // jamais sous la moitié de 10 000 DA
   });
 
   it("calcule les bornes et la période précédente", () => {
@@ -47,14 +47,14 @@ describe("périodes", () => {
 
   it("isole les dépenses évitables et propose un objectif", () => {
     const db = memDb();
-    exp(db, 10000, "2026-09-10", "Supermarché"); exp(db, 5000, "2026-09-11", "Restaurant"); exp(db, 2000, "2026-09-12", "Sorties");
+    exp(db, 1000000, "2026-09-10", "Supermarché"); exp(db, 500000, "2026-09-11", "Restaurant"); exp(db, 200000, "2026-09-12", "Sorties");
     const a = avoidableStats(db, "1m", TODAY);
-    expect(a.total).toBe(7000);
-    expect(a.allExpenses).toBe(17000);
-    expect(a.shareOfExpenses).toBeCloseTo(7000 / 17000);
+    expect(a.total).toBe(700000);
+    expect(a.allExpenses).toBe(1700000);
+    expect(a.shareOfExpenses).toBeCloseTo(700000 / 1700000);
     expect(a.byCategory.map((c) => c.name)).toEqual(["Restaurant", "Sorties"]);
-    expect(a.goal?.target).toBe(5000);
-    expect(a.goal?.saving).toBe(2000);
+    expect(a.goal?.target).toBe(560000); // 80 % de 7 000 DA, arrondi à la centaine
+    expect(a.goal?.saving).toBe(140000);
     expect(a.goal?.generatedBy).toBe("template");
     expect(a.goal?.actions.length).toBeGreaterThan(0);
   });

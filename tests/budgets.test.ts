@@ -88,17 +88,17 @@ describe("budgets par mois", () => {
     const db = memDb();
     const courant = walletId(db, "Compte courant");
     const courses = catId(db, "Courses"), sup = catId(db, "Supermarché");
-    setBudget(db, courses, "2026-09", 40000);
-    createTransaction(db, { type: "expense", amount: 25000, date: "2026-09-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
-    createTransaction(db, { type: "expense", amount: 31000, date: "2026-08-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
-    createTransaction(db, { type: "expense", amount: 28000, date: "2026-07-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    setBudget(db, courses, "2026-09", 4000000);
+    createTransaction(db, { type: "expense", amount: 2500000, date: "2026-09-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    createTransaction(db, { type: "expense", amount: 3100000, date: "2026-08-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
+    createTransaction(db, { type: "expense", amount: 2800000, date: "2026-07-10", walletId: courant, toWalletId: null, categoryId: sup, projectId: null, label: "", note: "" });
     const summary = budgetSummary(db, "2026-09");
-    expect(summary.saved).toBe(15000);
+    expect(summary.saved).toBe(1500000);
     const s = suggestBudgets(db, "2026-10").find((x) => x.categoryId === courses)!;
-    expect(s.saved).toBe(15000);
-    expect(s.average3).toBe(28000);
-    expect(s.suggested).toBeGreaterThanOrEqual(28000);
-    expect(s.suggested).toBeLessThan(40000);
-    expect(s.suggested % 1000).toBe(0);
+    expect(s.saved).toBe(1500000);
+    expect(s.average3).toBe(2800000);
+    expect(s.suggested).toBeGreaterThanOrEqual(2800000);
+    expect(s.suggested).toBeLessThan(4000000);
+    expect(s.suggested % 10000).toBe(0); // arrondi à la centaine de dinars
   });
 });

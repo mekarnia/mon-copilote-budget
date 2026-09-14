@@ -3,7 +3,7 @@ import { useChat, useClearChat, useSendChat } from "@/lib/queries";
 import { ErrorBanner, useGoBack } from "@/components/ui";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
-const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre 300 € de vélo ?", "Où je dépense le plus ?", "Combien mettre de côté ce mois-ci ?"];
+const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre un vélo à 25 000 DA ?", "Où je dépense le plus ?", "Combien mettre de côté ce mois-ci ?"];
 
 export function CoachPage() {
   const goBack = useGoBack();

@@ -24,7 +24,7 @@ export function getClient(db: DB): Anthropic {
 
 const draftSchema = z.object({
   type: z.enum(["expense", "income", "transfer"]).nullable(),
-  amount_euros: z.number().nullable(),
+  amount_da: z.number().nullable(),
   date: z.string().nullable(),
   label: z.string(),
   category_id: z.number().int().nullable(),
@@ -49,7 +49,7 @@ function catalogue(categories: Category[], wallets: Wallet[]): string {
 function system(db: DB, today: string): string {
   return `Tu extrais une transaction financière pour une application de budget familial française.
 Aujourd'hui : ${today} (format AAAA-MM-JJ). Résous les dates relatives (hier, ce matin, lundi dernier, le 5) par rapport à cette date. Si aucune date n'est mentionnée, mets la date du jour.
-Le montant est en euros, positif. Le type est "expense" (dépense), "income" (revenu) ou "transfer" (virement entre deux portefeuilles).
+Le montant est en dinars algériens (DA), positif. Le type est "expense" (dépense), "income" (revenu) ou "transfer" (virement entre deux portefeuilles).
 Le libellé est court : le nom du commerçant ou l'objet de l'transaction, sans montant ni date.
 Le moyen de paiement est "cash" si la phrase parle d'espèces, de liquide ou de cash, "card" si elle parle de carte ou CB, sinon null. Pour un paiement en espèces, choisis le portefeuille de type "especes" s'il existe.
 Si un élément essentiel est réellement ambigu (montant illisible, catégorie impossible à deviner), pose une seule question courte en français dans "question", sinon mets null.
@@ -61,7 +61,7 @@ function toDraft(p: z.infer<typeof draftSchema>, source: TransactionDraft["sourc
   const date = p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : null;
   return {
     type: p.type,
-    amount: p.amount_euros !== null && p.amount_euros > 0 ? Math.round(p.amount_euros * 100) : null,
+    amount: p.amount_da !== null && p.amount_da > 0 ? Math.round(p.amount_da * 100) : null,
     date,
     label: p.label.trim().slice(0, 120),
     categoryId: p.category_id,

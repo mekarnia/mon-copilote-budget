@@ -12,7 +12,7 @@ const MODEL = "claude-opus-5";
 
 const TONE = `Tu es le coach budget d'une famille française. Ton : bienveillant, concret, sans jugement ni morale, tutoiement.
 Tu parles uniquement à partir des chiffres fournis ; si une information manque, dis-le simplement. Tu ne donnes pas de conseil financier réglementé (placements, crédit).
-Montants en euros avec le format français (1 234,56 €).`;
+Montants en dinars algériens avec le format « 1 234,56 DA ».`;
 
 /** Message de repli quand il n'y a pas de clé IA : les faits, sans fioriture. */
 export function templateMessage(insights: Insight[]): string {
@@ -98,7 +98,7 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
     system: [
       { type: "text", text: TONE },
       { type: "text", text: `Réponds en 2 phrases maximum, avec au moins un chiffre précis tiré des données. Si la question demande une décision (« je peux me permettre… »), réponds oui ou non d'abord, puis le chiffre qui le justifie (reste à dépenser, budget restant, marge du mois dernier). Ne propose pas d'action que l'application ne permet pas : elle permet de créer un budget, un projet, une récurrence, ou un virement interne.` },
-      { type: "text", text: `Données de l'utilisateur (montants en euros) :\n${JSON.stringify(context)}\n\nConstats de la semaine :\n${JSON.stringify(insights)}` },
+      { type: "text", text: `Données de l'utilisateur (montants en dinars) :\n${JSON.stringify(context)}\n\nConstats de la semaine :\n${JSON.stringify(insights)}` },
     ],
     messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: userMessage }],
   });
@@ -113,7 +113,7 @@ export { AiNotConfigured };
 // ---------- Budgets du mois prochain ----------
 
 const budgetSchema = z.object({
-  items: z.array(z.object({ category_id: z.number().int(), suggested_euros: z.number(), reason: z.string() })),
+  items: z.array(z.object({ category_id: z.number().int(), suggested_da: z.number(), reason: z.string() })),
 });
 
 /** Suggestions pour `month` : calcul déterministe, affiné par l'IA quand une clé est présente. */
@@ -126,18 +126,18 @@ export async function suggestedBudgets(db: DB, month: string): Promise<{ items: 
       model: MODEL,
       max_tokens: 2000,
       output_config: { effort: "low", format: zodOutputFormat(budgetSchema) },
-      system: `${TONE}\nTu proposes les budgets mensuels d'une famille pour le mois ${month}, catégorie par catégorie, à partir des dépenses réelles. Reste proche des montants calculés (écart maximal 20 %), arrondis à la dizaine d'euros, et justifie chaque montant en une phrase courte qui cite un chiffre. Ne crée pas de catégorie.`,
-      messages: [{ role: "user", content: JSON.stringify(base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_euros: b.previousBudget / 100, last_month_spent_euros: b.lastSpent / 100, average_3_months_euros: b.average3 / 100, saved_last_month_euros: b.saved / 100, computed_suggestion_euros: b.suggested / 100 }))) }],
+      system: `${TONE}\nTu proposes les budgets mensuels d'une famille pour le mois ${month}, catégorie par catégorie, à partir des dépenses réelles. Reste proche des montants calculés (écart maximal 20 %), arrondis à la centaine de dinars, et justifie chaque montant en une phrase courte qui cite un chiffre. Ne crée pas de catégorie.`,
+      messages: [{ role: "user", content: JSON.stringify(base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_da: b.previousBudget / 100, last_month_spent_da: b.lastSpent / 100, average_3_months_da: b.average3 / 100, saved_last_month_da: b.saved / 100, computed_suggestion_da: b.suggested / 100 }))) }],
     });
     const parsed = response.parsed_output;
     if (!parsed) return { items: base, generatedBy: "template" };
     const byId = new Map(parsed.items.map((i) => [i.category_id, i]));
     const items = base.map((b) => {
       const ai = byId.get(b.categoryId);
-      if (!ai || !(ai.suggested_euros > 0)) return b;
-      const cents = Math.round(ai.suggested_euros * 100);
+      if (!ai || !(ai.suggested_da > 0)) return b;
+      const cents = Math.round(ai.suggested_da * 100);
       const bounded = Math.min(Math.round(b.suggested * 1.2), Math.max(Math.round(b.suggested * 0.8), cents));
-      return { ...b, suggested: Math.ceil(bounded / 1000) * 1000, reason: ai.reason.trim() || b.reason };
+      return { ...b, suggested: Math.ceil(bounded / 10000) * 10000, reason: ai.reason.trim() || b.reason };
     });
     return { items, generatedBy: "ai" };
   } catch {
@@ -148,7 +148,7 @@ export async function suggestedBudgets(db: DB, month: string): Promise<{ items: 
 // ---------- Objectif sur les dépenses évitables ----------
 
 const goalSchema = z.object({
-  target_euros: z.number(),
+  target_da: z.number(),
   reason: z.string(),
   actions: z.array(z.string()).max(3),
 });
@@ -170,22 +170,22 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
       model: MODEL,
       max_tokens: 800,
       output_config: { effort: "low", format: zodOutputFormat(goalSchema) },
-      system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la dizaine d'euros ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.`,
+      system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la centaine de dinars ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.`,
       messages: [{
         role: "user",
         content: JSON.stringify({
-          period, total_euros: stats.total / 100, previous_total_euros: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
-          computed_target_euros: stats.goal.target / 100, project: stats.goal.projectName,
-          by_category: stats.byCategory.map((c) => ({ name: c.name, total_euros: c.total / 100, share: Math.round(c.share * 100) })),
-          frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_euros: l.total / 100, category: l.categoryName })),
+          period, total_da: stats.total / 100, previous_total_da: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
+          computed_target_da: stats.goal.target / 100, project: stats.goal.projectName,
+          by_category: stats.byCategory.map((c) => ({ name: c.name, total_da: c.total / 100, share: Math.round(c.share * 100) })),
+          frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_da: l.total / 100, category: l.categoryName })),
         }),
       }],
     }, { timeout: 25_000, maxRetries: 0 });
     const p = response.parsed_output;
-    if (p && p.target_euros > 0) {
-      const cents = Math.round(p.target_euros * 100);
+    if (p && p.target_da > 0) {
+      const cents = Math.round(p.target_da * 100);
       const bounded = Math.min(Math.round(stats.total * 0.95), Math.max(Math.round(stats.total * 0.5), cents));
-      const target = Math.floor(bounded / 1000) * 1000;
+      const target = Math.floor(bounded / 10000) * 10000;
       if (target > 0 && target < stats.total) {
         goal = { target, saving: stats.total - target, projectName: stats.goal.projectName, reason: p.reason.trim() || stats.goal.reason, actions: p.actions.map((a) => a.trim()).filter(Boolean).slice(0, 3), generatedBy: "ai" };
       }

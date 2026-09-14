@@ -58,7 +58,7 @@ export function suggestHabits(
     const typical = median(items.map((i) => i.amount));
     let score = items.length * (1 / (1 + days / 60));
     if (opts.amount) {
-      // Écart relatif symétrique : 3 € contre 18 € est aussi éloigné que 18 € contre 3 €.
+      // Écart relatif symétrique : 300 DA contre 1 800 DA est aussi éloigné que 1 800 DA contre 300 DA.
       const ratio = Math.abs(opts.amount - typical) / Math.max(1, Math.min(opts.amount, typical));
       if (ratio <= 0.2) score *= 2;
       else if (ratio <= 0.5) score *= 1.3;

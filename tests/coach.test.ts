@@ -30,10 +30,10 @@ describe("coach", () => {
 
   it("repère une dépense inhabituelle par rapport à la moyenne de la catégorie", () => {
     const db = memDb();
-    for (const d of ["2026-07-05", "2026-07-19", "2026-08-02", "2026-08-16"]) expense(db, 4000, d, "Supermarché", "Lidl");
-    expense(db, 18000, "2026-09-18", "Supermarché", "Carrefour gros plein");
+    for (const d of ["2026-07-05", "2026-07-19", "2026-08-02", "2026-08-16"]) expense(db, 400000, d, "Supermarché", "Ardis");
+    expense(db, 1800000, "2026-09-18", "Supermarché", "Ardis gros plein");
     const u = computeInsights(db, TODAY).find((i) => i.kind === "unusual_expense");
-    expect(u?.title).toContain("Carrefour");
+    expect(u?.title).toContain("Ardis gros plein");
   });
 
   it("propose de déclarer un abonnement qui revient chaque mois", () => {

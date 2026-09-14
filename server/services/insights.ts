@@ -29,7 +29,7 @@ export function computeInsights(db: DB, today = todayIso()): Insight[] {
     }
   }
 
-  // 2. Dépense inhabituelle : sur les 7 derniers jours, plus de 2 fois la moyenne de la catégorie sur 3 mois, et plus de 50 €.
+  // 2. Dépense inhabituelle : sur les 7 derniers jours, plus de 2 fois la moyenne de la catégorie sur 3 mois, et plus de 2 000 DA.
   const since = addDays(today, -7);
   const recent = db.prepare(`SELECT t.id, t.amount, t.label, t.date, c.name AS category, COALESCE(c.parent_id, c.id) AS parent
     FROM transactions t JOIN categories c ON c.id = t.category_id
@@ -37,7 +37,7 @@ export function computeInsights(db: DB, today = todayIso()): Insight[] {
   const avgStmt = db.prepare(`SELECT AVG(t.amount) AS avg, COUNT(*) AS n FROM transactions t JOIN categories c ON c.id = t.category_id
     WHERE t.type = 'expense' AND COALESCE(c.parent_id, c.id) = ? AND t.date BETWEEN ? AND ? AND t.id <> ?`);
   for (const r of recent) {
-    if (r.amount < 5000) continue;
+    if (r.amount < 200000) continue; // 2 000 DA
     const a = avgStmt.get(r.parent, addDays(today, -90), addDays(today, -1), r.id) as { avg: number | null; n: number };
     if (a.n >= 3 && a.avg && r.amount > a.avg * 2) {
       out.push({ kind: "unusual_expense", severity: "info", title: `Dépense inhabituelle : ${r.label || r.category}`, text: `${formatCents(r.amount)} le ${r.date.slice(8, 10)}/${r.date.slice(5, 7)}, contre ${formatCents(Math.round(a.avg))} en moyenne en ${r.category}.`, amount: r.amount, link: `/transaction/${r.id}` });

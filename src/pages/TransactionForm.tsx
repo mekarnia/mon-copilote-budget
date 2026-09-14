@@ -204,7 +204,7 @@ export function TransactionFormPage() {
             if (describe.trim()) parseSpeech.mutateAsync(describe.trim()).then(applyDraft).catch(() => undefined);
           }}
         >
-          <input className="input" autoFocus value={describe} onChange={(e) => setDescribe(e.target.value)} placeholder="45 euros de courses chez Carrefour hier" disabled={busy} />
+          <input className="input" autoFocus value={describe} onChange={(e) => setDescribe(e.target.value)} placeholder="1200 dinars de courses chez Ardis hier" disabled={busy} />
           <button className="btn-primary" disabled={!describe.trim() || busy}>OK</button>
         </form>
       )}
@@ -213,7 +213,7 @@ export function TransactionFormPage() {
         <p className="mb-3 text-xs text-slate-500">Micro et appareil photo indisponibles sur une adresse en http:// : utilisez « Décrire » avec le micro du clavier, ou autorisez cette adresse dans chrome://flags (« Insecure origins treated as secure »).</p>
       )}
       {!editId && !speechAvailable && !insecure && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
-      {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 45 euros de courses chez Carrefour hier »"}</p>}
+      {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 1200 dinars de courses chez Ardis hier »"}</p>}
       {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">🤖 Lecture en cours…</p>}
       {draftInfo && !busy && (
         <div className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">
