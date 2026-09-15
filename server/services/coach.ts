@@ -159,17 +159,28 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
   while (history.length > 0 && history[0].role === "assistant") history.shift();
   db.prepare("INSERT INTO chat_messages (role, content) VALUES ('user', ?)").run(userMessage);
   const memory = readMemory(db);
-  const response = await client.messages.create({
-    model: CHAT_MODEL,
+  const requete = {
     max_tokens: 16000,
-    output_config: { effort: "low" },
+    output_config: { effort: "low" as const },
     system: [
-      { type: "text", text: CHAT_RULES },
+      { type: "text" as const, text: CHAT_RULES },
       ...(memory.text ? [{ type: "text" as const, text: `Ce que tu sais déjà de cette famille :\n${memory.text}` }] : []),
-      { type: "text", text: `Briefing chiffré :\n${financialBriefing(db, today)}` },
+      { type: "text" as const, text: `Briefing chiffré :\n${financialBriefing(db, today)}` },
     ],
     messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: userMessage }],
-  });
+  };
+  // Tous les comptes n'ont pas accès aux mêmes modèles. Le chat vise le moins
+  // cher, et retombe sur celui des autres fonctions si le compte ne l'a pas :
+  // mieux vaut une réponse plus chère qu'un coach en panne.
+  let response;
+  try {
+    response = await client.messages.create({ model: CHAT_MODEL, ...requete });
+  } catch (e) {
+    const statut = (e as { status?: number }).status;
+    if (statut !== 403 && statut !== 404) throw e;
+    console.warn(`Modèle ${CHAT_MODEL} inaccessible (${statut}) : le chat passe sur ${MODEL}.`);
+    response = await client.messages.create({ model: MODEL, ...requete });
+  }
   if (response.stop_reason === "refusal") throw new Error("Je ne peux pas répondre à cette question.");
   if (response.stop_reason === "max_tokens") throw new Error("La réponse a été coupée avant la fin. Reformulez plus court.");
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim() || "Je n'ai pas de réponse pour cette question.";
