@@ -23,6 +23,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Sans ces deux lignes, un ancien index.html pouvait rester en cache et
+        // réclamer des fichiers JavaScript qui n'existent plus : page blanche.
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
