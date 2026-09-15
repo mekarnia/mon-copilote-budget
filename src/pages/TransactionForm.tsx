@@ -7,7 +7,8 @@ import {
 import { Link } from "react-router-dom";
 import { monthLabel } from "@shared/dates";
 import { createRecognizer, transcriptOf } from "@/lib/speech";
-import { MoneyInput, Segmented, Field, ErrorBanner, useGoBack } from "@/components/ui";
+import { MoneyInput, Field, ErrorBanner, useGoBack, Bandeau } from "@/components/ui";
+import { IconCamera, IconCard, IconCash, IconLeft, IconMic, IconPen } from "@/components/icons";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { todayIso } from "@shared/dates";
 import { formatCents } from "@shared/money";
@@ -180,19 +181,35 @@ export function TransactionFormPage() {
 
   return (
     <div className="mx-auto min-h-full max-w-lg px-4 pb-10 pt-4">
-      {editId && (
-        <div className="mb-4 flex items-center">
-          <button className="btn-ghost px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
+      <Bandeau>
+        <div className="flex items-center justify-between gap-2">
+          <button type="button" className="-ml-2 flex size-11 shrink-0 items-center justify-center text-white/80" onClick={goBack} aria-label="Retour"><IconLeft size={22} /></button>
+          {!isAdjustment ? (
+            <div className="flex min-w-0 flex-1 justify-center rounded-xl bg-white/15 p-[3px]">
+              {TYPE_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => { setType(o.value); setCategoryId(null); setSuggested(null); }}
+                  className={`flex h-[38px] min-w-0 flex-1 items-center justify-center rounded-lg px-2 text-sm font-semibold ${type === o.value ? "bg-white text-brand" : "text-white/85"}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          ) : <span className="flex-1 text-center text-[15px] font-semibold">Correction de solde</span>}
+          <span className="size-11 shrink-0" />
         </div>
-      )}
+        <MoneyInput value={amount} onChange={setAmount} autoFocus={!editId} onBandeau />
+      </Bandeau>
 
       {!editId && (
         <div className="mb-3 grid grid-cols-3 gap-2">
-          <button type="button" className={`btn px-2 ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || insecure || busy}>
-            {listening ? "⏹ Stop" : "🎤 Dicter"}
+          <button type="button" className={`btn h-12 px-2 py-0 text-sm ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || insecure || busy}>
+            <IconMic size={18} />{listening ? "Stop" : "Dicter"}
           </button>
-          <button type="button" className={`btn-ghost px-2 ${showDescribe ? "ring-2 ring-brand" : ""}`} onClick={() => setShowDescribe((v) => !v)} disabled={busy}>✍️ Décrire</button>
-          <button type="button" className="btn-ghost px-2" onClick={() => receiptRef.current?.click()} disabled={busy}>📷 Ticket</button>
+          <button type="button" className={`btn-ghost h-12 px-2 py-0 text-sm ${showDescribe ? "ring-2 ring-brand" : ""}`} onClick={() => setShowDescribe((v) => !v)} disabled={busy}><IconPen size={18} />Décrire</button>
+          <button type="button" className="btn-ghost h-12 px-2 py-0 text-sm" onClick={() => receiptRef.current?.click()} disabled={busy}><IconCamera size={18} />Ticket</button>
           <input ref={receiptRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && onReceipt(e.target.files[0])} />
         </div>
       )}
@@ -214,11 +231,11 @@ export function TransactionFormPage() {
       )}
       {!editId && !speechAvailable && !insecure && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
       {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 1200 dinars de courses chez Ardis hier »"}</p>}
-      {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">🤖 Lecture en cours…</p>}
+      {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">Lecture en cours…</p>}
       {draftInfo && !busy && (
         <div className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">
           <p>{draftInfo.source === "photo" ? "Ticket lu." : "Compris."} Vérifiez puis appuyez sur Ajouter.</p>
-          {draftInfo.question && <p className="mt-1 font-semibold">❓ {draftInfo.question}</p>}
+          {draftInfo.question && <p className="mt-1 font-semibold">{draftInfo.question}</p>}
         </div>
       )}
       <ErrorBanner error={extract.error || parseSpeech.error} />
@@ -232,8 +249,6 @@ export function TransactionFormPage() {
       {isAdjustment && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800">Correction de solde automatique. Vous pouvez la supprimer si elle est erronée.</p>}
 
       <form onSubmit={submit} className="mt-2 space-y-5">
-        {!isAdjustment && <Segmented value={type} onChange={(t) => { setType(t); setCategoryId(null); setSuggested(null); }} options={TYPE_OPTIONS} />}
-        <MoneyInput value={amount} onChange={setAmount} autoFocus={!editId} />
 
         {type !== "transfer" && !isAdjustment && (
           <div className="grid grid-cols-2 gap-2">
@@ -242,9 +257,10 @@ export function TransactionFormPage() {
                 key={m}
                 type="button"
                 onClick={() => choosePayment(m)}
-                className={`btn ${paymentMethod === m ? "bg-brand text-white" : "btn-ghost"}`}
+                className={`btn h-13 py-0 ${paymentMethod === m ? "bg-brand text-white" : "btn-ghost"}`}
+                style={{ height: 52 }}
               >
-                {m === "card" ? "💳" : "💵"} {PAYMENT_LABEL[m]}
+                {m === "card" ? <IconCard size={20} /> : <IconCash size={20} />} {PAYMENT_LABEL[m]}
               </button>
             ))}
           </div>

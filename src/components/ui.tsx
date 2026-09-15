@@ -8,7 +8,7 @@ export function Money({ cents, className = "", signed = false, short = false }: 
 }
 
 /** Saisie d'un montant en dinars, valeur exposée en centimes. Clavier numérique sur mobile. */
-export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }: { value: number | null; onChange: (cents: number | null) => void; autoFocus?: boolean; placeholder?: string }) {
+export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00", onBandeau = false }: { value: number | null; onChange: (cents: number | null) => void; autoFocus?: boolean; placeholder?: string; onBandeau?: boolean }) {
   const [text, setText] = useState(value === null ? "" : centsToInput(value));
   // Synchronise l'affichage quand la valeur change de l'extérieur (transaction chargée, brouillon IA, remise à zéro).
   useEffect(() => {
@@ -19,6 +19,23 @@ export function MoneyInput({ value, onChange, autoFocus, placeholder = "0,00" }:
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
+  // Dans le bandeau, le montant n'est pas un champ parmi d'autres : c'est le sujet de l'écran.
+  if (onBandeau) {
+    return (
+      <div className="flex items-baseline justify-center gap-2 pb-1">
+        <input
+          inputMode="decimal"
+          autoFocus={autoFocus}
+          className="min-w-0 max-w-[75%] border-0 bg-transparent p-0 text-center text-5xl font-bold tabular-nums text-white outline-none placeholder:text-white/45"
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => { setText(e.target.value); onChange(parseEuros(e.target.value)); }}
+          size={Math.max(4, text.length || 4)}
+        />
+        <span className="shrink-0 text-xl font-semibold text-white/75">{CURRENCY_SYMBOL}</span>
+      </div>
+    );
+  }
   return (
     <div className="relative">
       <input

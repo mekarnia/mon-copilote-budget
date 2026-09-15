@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Category, TxType } from "@shared/types";
+import { CategoryBadge } from "./icons";
 
 /** Grille de catégories : les parents en gros, les sous-catégories en puces. Une seule action : taper. */
 export function CategoryPicker({ categories, type, value, onChange }: { categories: Category[]; type: TxType; value: number | null; onChange: (id: number) => void }) {
@@ -19,9 +20,9 @@ export function CategoryPicker({ categories, type, value, onChange }: { categori
               key={p.id}
               type="button"
               onClick={() => onChange(p.id)}
-              className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-sm font-medium ${active ? "border-brand bg-brand/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}
+              className={`flex min-h-[74px] flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-sm font-medium ${active ? "border-brand bg-brand/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"}`}
             >
-              <span className="text-2xl">{p.icon ?? "•"}</span>
+              <CategoryBadge name={p.name} size={32} />
               <span className="leading-tight">{p.name}</span>
             </button>
           );
@@ -34,7 +35,7 @@ export function CategoryPicker({ categories, type, value, onChange }: { categori
               key={c.id}
               type="button"
               onClick={() => onChange(c.id)}
-              className={`chip ${value === c.id ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`}
+              className={`flex h-11 items-center rounded-full px-4 text-sm font-medium ${value === c.id ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`}
             >
               {c.name}
             </button>
