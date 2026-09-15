@@ -308,7 +308,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.get("/settings", (c) => {
     const rows = db.prepare("SELECT key, value FROM settings").all() as unknown as { key: string; value: string }[];
     const out: Record<string, string> = {};
-    for (const r of rows) out[r.key] = r.value;
+    for (const r of rows) if (r.key !== "aiKey") out[r.key] = r.value;
     const cle = readKey();
     out.aiKey = cle ? "••••" + cle.slice(-4) : "";
     return c.json(out);
@@ -334,8 +334,16 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   // ---- MVC 2 : IA, catégorisation, import ----
   const aiError = (e: unknown) => {
     if (e instanceof AiNotConfigured) throw new HttpError(400, e.message);
-    const msg = (e as Error).message || "Erreur IA";
-    throw new HttpError(502, /401|authentication|invalid x-api-key/i.test(msg) ? "Clé IA refusée : vérifiez-la dans Réglages." : msg);
+    const err = e as { status?: number; message?: string; error?: { error?: { type?: string; message?: string } } };
+    const statut = err.status;
+    const detail = err.error?.error?.message ?? err.message ?? "Erreur IA";
+    // Chaque cause a sa propre issue : dire laquelle, sinon l'utilisateur ne peut rien faire.
+    if (statut === 401) throw new HttpError(502, "Clé IA refusée par Anthropic (401). Elle est peut-être révoquée : créez-en une nouvelle sur console.anthropic.com et recollez-la dans Réglages.");
+    if (statut === 403) throw new HttpError(502, "Accès refusé par Anthropic (403). La clé n'a pas le droit d'utiliser ce modèle.");
+    if (statut === 429) throw new HttpError(502, "Limite de débit atteinte chez Anthropic (429). Réessayez dans une minute.");
+    if (statut === 400 && /credit balance|billing/i.test(detail)) throw new HttpError(502, "Crédit Anthropic épuisé. Rechargez votre solde sur console.anthropic.com, rubrique Billing.");
+    if (statut === 404) throw new HttpError(502, `Modèle introuvable côté Anthropic (404) : ${detail}`);
+    throw new HttpError(502, statut ? `Anthropic a répondu ${statut} : ${detail}` : detail);
   };
 
   /** Diagnostic : un appel réel, avec l'erreur brute de l'API si ça échoue. */
