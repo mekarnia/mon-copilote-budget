@@ -40,6 +40,8 @@ export const useSuggestBudgets = () =>
 export const useApplyBudgets = () => useWrite(({ month, items }: { month: string; items: { categoryId: number; amount: number }[] }) => api.post("/api/budgets/apply", { month, items }));
 export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => api.get<Project[]>("/api/projects") });
 export const useRecurrences = () => useQuery({ queryKey: ["recurrences"], queryFn: () => api.get<Recurrence[]>("/api/recurrences") });
+export interface VersionInfo { commit: string; date: string; interfaceLe: string }
+export const useVersion = () => useQuery({ queryKey: ["version"], queryFn: () => api.get<VersionInfo>("/api/version") });
 export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api.get<Record<string, string>>("/api/settings") });
 
 /** Toute écriture invalide l'ensemble : les données sont petites, la simplicité prime. */

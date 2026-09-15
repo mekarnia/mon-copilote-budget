@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
-  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useTestAiKey, useWallets,
+  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useTestAiKey, useVersion, useWallets,
 } from "@/lib/queries";
 import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -269,6 +269,7 @@ function BackupSettings() {
   const { data: settings = {} } = useSettings();
   const saveSettings = useSaveSettings();
   const testAi = useTestAiKey();
+  const { data: version } = useVersion();
   const restore = useRestoreBackup();
   const [aiKey, setAiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -297,6 +298,12 @@ function BackupSettings() {
         <input type="file" accept="application/json" className="input" onChange={(e) => e.target.files?.[0] && onRestore(e.target.files[0])} />
         {message && <p className="text-sm">{message}</p>}
       </div>
+      <div className="card space-y-1 text-xs text-slate-500">
+        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Version installée</p>
+        <p>Code : <span className="font-mono">{version?.commit ?? "…"}</span>{version?.date && ` · ${version.date}`}</p>
+        {version?.interfaceLe && <p>Interface construite le {version.interfaceLe}</p>}
+      </div>
+
       <div className="card space-y-3">
         <h2 className="font-semibold">Clé IA (photo de ticket, dictée, catégorisation)</h2>
         <p className="text-sm text-slate-500">Clé d'API Anthropic, stockée uniquement sur le serveur local. Sans clé, tout le reste fonctionne. {settings.aiKey ? `Clé enregistrée : ${settings.aiKey}` : "Aucune clé enregistrée."}</p>

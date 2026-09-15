@@ -18,6 +18,7 @@ import * as budgets from "./services/budgets.js";
 import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
+import { versionInfo } from "./services/version.js";
 import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
@@ -336,6 +337,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     if (e instanceof AiNotConfigured) throw new HttpError(400, e.message);
     throw new HttpError(502, `L'IA n'a pas pu répondre : ${expliquerErreurIa(e)}. Testez la clé dans Réglages pour savoir quel modèle est en cause.`);
   };
+
+  /** Quelle version tourne réellement : indispensable pour déboguer à distance. */
+  api.get("/version", (c) => c.json(versionInfo(path.resolve(import.meta.dirname, ".."))));
 
   api.get("/ai/test", async (c) => {
     try {
