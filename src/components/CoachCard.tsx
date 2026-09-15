@@ -24,7 +24,7 @@ export function WeeklyAdvicePanel() {
     <section className="card space-y-3 border border-brand/20">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">🧭 Conseil de la semaine</h2>
-        <button className="text-xs text-slate-500" onClick={() => refresh.mutate()} disabled={refresh.isPending} aria-label="Recalculer">{refresh.isPending ? "…" : "↻"}</button>
+        <button className="-my-2 -mr-2 flex size-11 items-center justify-center text-slate-500" onClick={() => refresh.mutate()} disabled={refresh.isPending} aria-label="Recalculer le conseil">{refresh.isPending ? "…" : "↻"}</button>
       </div>
       <p className="text-sm leading-relaxed">{data.message}</p>
       {data.insights.length > 0 && (

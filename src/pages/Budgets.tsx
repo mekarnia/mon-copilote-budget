@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useApplyBudgets, useBudgets, useCopyBudgets, useSetBudget, useSuggestBudgets, type BudgetSuggestion } from "@/lib/queries";
-import { Money, MonthNav, ProgressBar, Sheet, MoneyInput, ErrorBanner, PageHeader } from "@/components/ui";
-import { currentMonth, monthLabel, shiftMonth } from "@shared/dates";
+import { Money, ProgressBar, Sheet, MoneyInput, ErrorBanner, Bandeau } from "@/components/ui";
+import { CategoryBadge, IconLeft, IconRight, IconRight as IconChevron, IconRobot } from "@/components/icons";
+import { currentMonth, deMois, monthLabel, shiftMonth } from "@shared/dates";
 import { formatCents } from "@shared/money";
 import type { BudgetLine } from "@shared/types";
 
@@ -9,6 +10,9 @@ export function BudgetsPage() {
   const [month, setMonth] = useState(currentMonth());
   const { data } = useBudgets(month);
   const lines = data?.lines ?? [];
+  // Une catégorie sans budget ne porte aucune décision : elle ne doit pas peser autant qu'une autre.
+  const avecBudget = lines.filter((b) => b.amount > 0);
+  const sansBudget = lines.filter((b) => b.amount <= 0);
   const summary = data?.summary;
   const [editing, setEditing] = useState<BudgetLine | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
@@ -27,20 +31,28 @@ export function BudgetsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Budgets" />
-      <MonthNav month={month} onChange={setMonth} />
-      <p className="text-xs text-slate-500">Chaque mois a ses propres budgets. Modifier {monthLabel(month)} ne change pas les autres mois.</p>
-
-      {summary?.hasBudgets && (
-        <div className="card space-y-2">
-          <div className="flex justify-between text-sm"><span>Budget total</span><Money cents={summary.budget} className="font-semibold" /></div>
-          <div className="flex justify-between text-sm"><span>Dépensé</span><Money cents={summary.spent} className="font-semibold" /></div>
-          <ProgressBar ratio={summary.budget > 0 ? summary.spent / summary.budget : 0} status={summary.spent > summary.budget ? "red" : summary.spent / summary.budget >= 0.8 ? "orange" : "green"} />
-          <div className={`flex justify-between text-sm font-semibold ${summary.saved >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-            <span>{summary.saved >= 0 ? "Économies réalisées" : "Dépassement"}</span><Money cents={Math.abs(summary.saved)} />
-          </div>
+      <Bandeau>
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Mois précédent" className="-ml-2 flex size-11 items-center justify-center text-white/80"><IconLeft size={22} /></button>
+          <span className="text-[17px] font-semibold capitalize">{monthLabel(month)}</span>
+          <button onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Mois suivant" className="-mr-2 flex size-11 items-center justify-center text-white/80"><IconRight size={22} /></button>
         </div>
-      )}
+        {summary?.hasBudgets ? (
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              {/* « Il reste » et non « Économies réalisées » : le mois n'est pas fini. */}
+              <p className="text-[13px] text-white/75">{summary.saved >= 0 ? "Il reste sur vos budgets" : "Dépassement"}</p>
+              <p className="text-[12px] tabular-nums text-white/75"><Money cents={summary.spent} short /> / <Money cents={summary.budget} short /></p>
+            </div>
+            <p className="text-[30px] font-bold tabular-nums"><Money cents={Math.abs(summary.saved)} short /></p>
+            <div className="h-[7px] rounded-full bg-white/25">
+              <div className="h-[7px] rounded-full bg-white" style={{ width: `${Math.min(100, Math.round((summary.budget > 0 ? summary.spent / summary.budget : 0) * 100))}%` }} />
+            </div>
+          </div>
+        ) : (
+          <p className="text-[13px] text-white/80">Aucun budget pour {monthLabel(month)}. Touchez une catégorie pour en fixer un.</p>
+        )}
+      </Bandeau>
 
       {summary && !summary.hasBudgets && (
         <div className="card space-y-2 text-sm">
@@ -49,32 +61,48 @@ export function BudgetsPage() {
             {summary.previousMonthHasBudgets && (
               <button className="btn-ghost" onClick={() => copy.mutate({ from: shiftMonth(month, -1), to: month })} disabled={copy.isPending}>Reprendre les budgets de {monthLabel(shiftMonth(month, -1))}</button>
             )}
-            <button className="btn-primary" onClick={() => openSuggestions(month)} disabled={suggest.isPending}>{suggest.isPending ? "Calcul…" : "🤖 Suggérer d'après mes dépenses"}</button>
+            <button className="btn-primary" onClick={() => openSuggestions(month)} disabled={suggest.isPending}>{suggest.isPending ? "Calcul…" : "Suggérer d'après mes dépenses"}</button>
           </div>
         </div>
       )}
 
-      <p className="text-sm text-slate-500">Touchez une catégorie pour fixer son budget du mois.</p>
-      <div className="space-y-2">
-        {lines.map((b) => (
-          <button key={b.categoryId} className="card block w-full text-left" onClick={() => { setEditing(b); setAmount(b.amount || null); }}>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="font-medium">{b.icon} {b.categoryName}</span>
-              <span className="text-sm">
-                <Money cents={b.spent} className="font-semibold" />
-                {b.amount > 0 ? <span className="text-slate-500"> / <Money cents={b.amount} /></span> : <span className="text-slate-400"> · pas de budget</span>}
-              </span>
-            </div>
-            <ProgressBar ratio={b.ratio} status={b.status} />
-            {b.status === "red" && <p className="mt-1 text-xs text-red-600">Dépassé de <Money cents={b.spent - b.amount} /></p>}
-            {(b.status === "green" || b.status === "orange") && <p className="mt-1 text-xs text-slate-500">Il reste <Money cents={b.amount - b.spent} /></p>}
-          </button>
-        ))}
-      </div>
+      {avecBudget.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="font-semibold">Vos budgets du mois</h2>
+          {avecBudget.map((b) => (
+            <button key={b.categoryId} className="card block w-full space-y-2 text-left" onClick={() => { setEditing(b); setAmount(b.amount || null); }}>
+              <div className="flex items-center gap-3">
+                <CategoryBadge name={b.categoryName} size={34} />
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{b.categoryName}</span>
+                <span className={`shrink-0 text-[13px] font-semibold ${b.status === "red" ? "text-red-600" : b.status === "orange" ? "text-amber-600" : "text-brand"}`}>
+                  {b.status === "red" ? <>Dépassé de <Money cents={b.spent - b.amount} short /></> : <>Il reste <Money cents={b.amount - b.spent} short /></>}
+                </span>
+              </div>
+              <ProgressBar ratio={b.ratio} status={b.status} />
+              <p className="text-[12px] text-slate-500"><Money cents={b.spent} short /> dépensés sur <Money cents={b.amount} short /></p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {sansBudget.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="font-semibold text-slate-500">Sans budget</h2>
+          <div className="card divide-y divide-slate-100 p-0 px-3.5 dark:divide-slate-800">
+            {sansBudget.map((b) => (
+              <button key={b.categoryId} className="flex h-[46px] w-full items-center gap-2 text-left" onClick={() => { setEditing(b); setAmount(null); }}>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-700 dark:text-slate-300">{b.categoryName}</span>
+                <span className="shrink-0 text-[13px] text-slate-500"><Money cents={b.spent} short /> dépensé{b.spent > 0 ? "s" : ""}</span>
+                <IconChevron size={17} className="shrink-0 text-slate-400" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {summary?.hasBudgets && (
         <button className="btn-primary w-full" onClick={() => openSuggestions(nextMonth)} disabled={suggest.isPending}>
-          {suggest.isPending ? "Calcul…" : `🤖 Préparer les budgets de ${monthLabel(nextMonth)}`}
+          {suggest.isPending ? "Calcul…" : <><IconRobot size={19} />Préparer les budgets {deMois(monthLabel(nextMonth).replace(/\s\d{4}$/, ""))}</>}
         </button>
       )}
       <ErrorBanner error={suggest.error || copy.error} />

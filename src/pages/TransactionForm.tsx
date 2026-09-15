@@ -345,7 +345,7 @@ export function TransactionFormPage() {
         )}
 
         {!showMore ? (
-          <button type="button" className="text-sm text-brand" onClick={() => setShowMore(true)}>+ Note ou photo</button>
+          <button type="button" className="-my-2 flex h-11 items-center text-sm font-medium text-brand" onClick={() => setShowMore(true)}>+ Note ou photo</button>
         ) : (
           <div className="space-y-3">
             <Field label="Note"><textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>

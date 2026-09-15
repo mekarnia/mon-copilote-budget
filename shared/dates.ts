@@ -86,3 +86,8 @@ export function isoWeek(iso: string): string {
   const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
+
+/** « de septembre » mais « d'octobre » : avril, août et octobre commencent par une voyelle. */
+export function deMois(label: string): string {
+  return /^[aeiouâàéèêîôûh]/i.test(label.trim()) ? `d'${label}` : `de ${label}`;
+}

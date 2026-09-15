@@ -21,7 +21,7 @@ export function ProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Projets" right={<button className="btn-primary shrink-0 px-3 py-2 text-sm" onClick={openNew}>Nouveau</button>} />
+      <PageHeader title="Projets" right={<button className="btn-primary h-11 shrink-0 px-4 py-0 text-sm" onClick={openNew}>Nouveau</button>} />
       {projects.length === 0 && <Empty icon="🎯" text="Vacances, voiture, fonds d'urgence… Créez votre premier projet d'épargne." />}
       {projects.map((p) => (
         <div key={p.id} className={`card space-y-2 ${p.done ? "opacity-70" : ""}`}>
@@ -32,7 +32,7 @@ export function ProjectsPage() {
                 Sur {p.walletName}{p.dueDate && ` · pour le ${new Date(p.dueDate).toLocaleDateString("fr-FR")}`}
               </p>
             </div>
-            <button className="text-sm text-slate-500" onClick={() => openEdit(p)}>Modifier</button>
+            <button className="-my-2 flex h-11 items-center px-2 text-sm font-medium text-slate-500" onClick={() => openEdit(p)}>Modifier</button>
           </div>
           <p className="text-3xl font-bold"><Money cents={p.saved} /> <span className="text-base font-normal text-slate-500">sur <Money cents={p.target} /></span></p>
           <ProgressBar ratio={p.ratio} status={p.done ? "green" : "green"} />

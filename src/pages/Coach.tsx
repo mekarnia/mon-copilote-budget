@@ -33,16 +33,16 @@ export function CoachPage() {
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col px-4 pb-4 pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <button className="btn-ghost px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
+        <button className="btn-ghost size-11 p-0" onClick={goBack} aria-label="Retour">‹</button>
         <h1 className="text-lg font-bold">Mon coach</h1>
-        <button className="text-sm text-slate-500" onClick={() => { if (messages.length && confirm("Effacer la conversation ?")) clear.mutate(); }}>Effacer</button>
+        <button className="flex h-11 items-center px-2 text-sm font-medium text-slate-500" onClick={() => { if (messages.length && confirm("Effacer la conversation ?")) clear.mutate(); }}>Effacer</button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">
         {sansCle && (
           <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
             Le coach répond grâce à l'IA : il lui faut votre clé Anthropic pour lire vos chiffres et vous répondre.
-            {" "}<Link to="/reglages/sauvegarde" className="font-semibold underline">L'ajouter dans Réglages</Link>. Tout le reste de l'application fonctionne sans.
+            {" "}<Link to="/reglages/sauvegarde" className="inline-flex h-11 items-center font-semibold underline">L'ajouter dans Réglages</Link>. Tout le reste de l'application fonctionne sans.
           </div>
         )}
         {messages.length === 0 && <WeeklyAdvicePanel />}
@@ -50,7 +50,7 @@ export function CoachPage() {
           <div className="space-y-3">
             <p className="text-sm text-slate-500">Posez une question sur vos propres chiffres. Réponse en trois phrases, avec un montant. Le coach se souvient de vos échanges précédents.</p>
             <div className="flex flex-wrap gap-2">
-              {SUGGESTIONS.map((s) => <button key={s} className="chip bg-slate-100 disabled:opacity-40 dark:bg-slate-800" disabled={sansCle} onClick={() => ask(s)}>{s}</button>)}
+              {SUGGESTIONS.map((s) => <button key={s} className="flex h-11 items-center rounded-full bg-slate-100 px-4 text-sm font-medium disabled:opacity-40 dark:bg-slate-800" disabled={sansCle} onClick={() => ask(s)}>{s}</button>)}
             </div>
           </div>
         )}

@@ -105,7 +105,7 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={`rounded-lg py-2 text-sm font-semibold transition ${value === o.value ? "bg-white shadow dark:bg-slate-900" : "text-slate-500"}`}
+          className={`flex h-11 items-center justify-center rounded-lg text-sm font-semibold transition ${value === o.value ? "bg-white shadow dark:bg-slate-900" : "text-slate-500"}`}
         >
           {o.label}
         </button>
@@ -123,9 +123,9 @@ export function MonthNav({ month, onChange }: { month: string; onChange: (m: str
   };
   return (
     <div className="flex items-center justify-between">
-      <button className="btn-ghost px-3 py-2" onClick={() => shift(-1)} aria-label="Mois précédent">‹</button>
+      <button className="btn-ghost size-11 p-0" onClick={() => shift(-1)} aria-label="Mois précédent">‹</button>
       <span className="text-lg font-semibold capitalize">{label}</span>
-      <button className="btn-ghost px-3 py-2" onClick={() => shift(1)} aria-label="Mois suivant">›</button>
+      <button className="btn-ghost size-11 p-0" onClick={() => shift(1)} aria-label="Mois suivant">›</button>
     </div>
   );
 }
@@ -167,7 +167,7 @@ export function PageHeader({ title, subtitle, right }: { title: ReactNode; subti
   const goBack = useGoBack();
   return (
     <div className="flex items-center gap-2">
-      <button className="btn-ghost shrink-0 px-3 py-2" onClick={goBack} aria-label="Retour">‹</button>
+      <button className="btn-ghost size-11 shrink-0 p-0" onClick={goBack} aria-label="Retour">‹</button>
       <div className="min-w-0 flex-1">
         <h1 className="truncate text-2xl font-bold">{title}</h1>
         {subtitle && <p className="truncate text-xs text-slate-500">{subtitle}</p>}

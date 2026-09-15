@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader, Segmented } from "@/components/ui";
+import { CategoryBadge, categoryLook } from "@/components/icons";
 import { formatCents } from "@shared/money";
 import { monthLabel } from "@shared/dates";
 
@@ -40,7 +41,7 @@ export function SuiviPage() {
       <PageHeader title="Suivi" />
       <div className="scroll-row -mx-4 px-4">
         {VIEWS.map((v) => (
-          <button key={v.key} className={`chip shrink-0 ${view === v.key ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => set({ vue: v.key })}>{v.label}</button>
+          <button key={v.key} className={`flex h-11 shrink-0 items-center rounded-full px-4 text-sm font-medium ${view === v.key ? "bg-brand text-white" : "bg-slate-100 dark:bg-slate-800"}`} onClick={() => set({ vue: v.key })}>{v.label}</button>
         ))}
       </div>
       {view === "depenses" && <PeriodIndicator type="expense" period={period} onPeriod={(p) => set({ p })} />}
@@ -69,13 +70,10 @@ function PeriodIndicator({ type, period, onPeriod }: { type: "expense" | "income
           <p className="text-3xl font-bold tabular-nums whitespace-nowrap">{formatCents(data.total)}</p>
           <p className="text-sm text-slate-500">
             {data.range.granularity === "day" ? `${formatCents(data.perDay)} par jour` : `${formatCents(Math.round(data.total / Math.max(1, data.points.length)))} par mois`}
-            {delta && <> · <span className={`font-semibold ${good ? "text-emerald-600" : "text-red-600"}`}>{delta} vs période précédente</span></>}
+            {delta && <> · <span className={`font-semibold ${good ? "text-emerald-600" : "text-red-600"}`}>{delta} contre la période précédente</span></>}
           </p>
         </div>
         {isExpense ? <CumulativeCurve points={data.points} previous={data.previousPoints} /> : <Bars points={data.points} color="fill-[#1baf7a] dark:fill-[#199e70]" />}
-        <p className="text-xs text-slate-500">
-          {isExpense ? "Cumul depuis le début de la période, la période précédente en pointillé." : "Total de chaque jour ou de chaque mois selon la période."}
-        </p>
       </div>
       <CategoryList cats={data.byCategory} type={type} period={period} />
     </div>
@@ -103,7 +101,7 @@ function AvoidableIndicator({ period, onPeriod }: { period: PeriodKey; onPeriod:
           <p className="text-3xl font-bold tabular-nums whitespace-nowrap">{formatCents(data.total)}</p>
           <p className="text-sm text-slate-500">
             {Math.round(data.shareOfExpenses * 100)} % des dépenses
-            {delta && <> · <span className={`font-semibold ${data.deltaPct! <= 0 ? "text-emerald-600" : "text-red-600"}`}>{delta} vs période précédente</span></>}
+            {delta && <> · <span className={`font-semibold ${data.deltaPct! <= 0 ? "text-emerald-600" : "text-red-600"}`}>{delta} contre la période précédente</span></>}
           </p>
         </div>
         {data.avoidableIds.length === 0 ? (
@@ -140,15 +138,20 @@ function CategoryList({ cats, type, period }: { cats: Cat[]; type: "expense" | "
       <h2 className="font-semibold">Par catégorie sur la période</h2>
       {cats.length === 0 && <p className="text-sm text-slate-500">Rien sur cette période.</p>}
       {cats.map((c) => (
-        <Link key={c.categoryId} to={`/suivi/categorie/${c.categoryId}?type=${type}&p=${period}`} className="block space-y-1">
-          <div className="flex items-center justify-between text-sm">
-            <span>{c.icon} {c.name}</span>
-            <span className="flex items-center gap-2"><span className="font-semibold tabular-nums">{formatCents(c.total)}</span><span className="text-xs text-slate-500">{Math.round(c.share * 100)} %</span><span className="text-slate-400">›</span></span>
+        <Link key={c.categoryId} to={`/suivi/categorie/${c.categoryId}?type=${type}&p=${period}`} className="flex h-[58px] items-center gap-3">
+          <CategoryBadge name={c.name} size={34} />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="truncate text-[15px] font-semibold">{c.name}</p>
+            <div className="h-1 rounded-full bg-slate-200 dark:bg-slate-800">
+              <div className={`h-1 rounded-full ${categoryLook(c.name).bar}`} style={{ width: `${Math.max(2, (c.total / max) * 100)}%` }} />
+            </div>
           </div>
-          <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-slate-300 dark:bg-slate-600" style={{ width: `${Math.max(2, (c.total / max) * 100)}%` }} /></div>
+          <div className="shrink-0 text-right">
+            <p className="text-[15px] font-bold tabular-nums">{formatCents(c.total)}</p>
+            <p className="text-[11px] text-slate-500">{Math.round(c.share * 100)} %</p>
+          </div>
         </Link>
       ))}
-      {cats.length > 0 && <p className="text-xs text-slate-500">Touchez une catégorie pour voir ses transactions sur la période.</p>}
     </div>
   );
 }
@@ -174,7 +177,7 @@ function CumulativeCurve({ points, previous }: { points: Point[]; previous: Poin
   return (
     <div className="space-y-1">
       <div className="h-5 text-xs text-slate-600 dark:text-slate-300">
-        {sel ? <>{sel.label.length === 7 ? monthLabel(sel.label) : frDate(sel.date)} : <b>{formatCents(sel.cumulative)}</b> cumulés{sel.value > 0 && ` (+${formatCents(sel.value)})`}</> : <span className="text-slate-400">Touchez la courbe pour lire une valeur.</span>}
+        {sel ? <>{sel.label.length === 7 ? monthLabel(sel.label) : frDate(sel.date)} : <b>{formatCents(sel.cumulative)}</b> cumulés{sel.value > 0 && ` (+${formatCents(sel.value)})`}</> : <span className="text-slate-400">Cumul de la période, le mois précédent en pointillé.</span>}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Dépenses cumulées" onMouseLeave={() => setHover(null)}>
         <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
@@ -208,7 +211,7 @@ function Bars({ points, color }: { points: Point[]; color: string }) {
   const sel = hover !== null ? points[hover] : null;
   return (
     <div className="space-y-1">
-      {!monthly && <div className="h-5 text-xs text-slate-600 dark:text-slate-300">{sel ? <>{frDate(sel.date)} : <b>{formatCents(sel.value)}</b></> : <span className="text-slate-400">Touchez une barre pour lire une valeur.</span>}</div>}
+      {!monthly && <div className="h-5 text-xs text-slate-600 dark:text-slate-300">{sel ? <>{frDate(sel.date)} : <b>{formatCents(sel.value)}</b></> : <span className="text-slate-400">Total par jour sur la période.</span>}</div>}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Montants par période" onMouseLeave={() => setHover(null)}>
         <line x1={0} x2={W} y1={y(0)} y2={y(0)} className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
         {points.map((p, i) => {
