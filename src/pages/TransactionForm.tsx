@@ -258,7 +258,7 @@ export function TransactionFormPage() {
 
         <div className="grid grid-cols-2 gap-3">
           <Field label={type === "transfer" ? "Depuis" : "Portefeuille"}>
-            <select className="input" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value))}>
+            <select className="input min-w-0 px-3" value={walletId ?? ""} onChange={(e) => setWalletId(Number(e.target.value))}>
               {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           </Field>

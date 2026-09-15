@@ -3,6 +3,19 @@ import { useHome, useToVerifyCount } from "@/lib/queries";
 import { Money, ProgressBar, Empty } from "@/components/ui";
 import { CoachButton } from "@/components/CoachCard";
 import { currentMonth, monthLabel } from "@shared/dates";
+import { formatCents } from "@shared/money";
+
+/**
+ * Les montants en dinars sont deux à trois chiffres plus longs qu'en euros :
+ * à taille fixe, « 1 200 000,00 DA » déborde de l'écran du téléphone.
+ */
+function tailleDuMontant(cents: number): string {
+  const n = formatCents(cents).length;
+  if (n > 16) return "text-2xl";
+  if (n > 13) return "text-3xl";
+  if (n > 10) return "text-4xl";
+  return "text-5xl";
+}
 
 export function HomePage() {
   const month = currentMonth();
@@ -34,11 +47,11 @@ export function HomePage() {
 
       <section className="card text-center">
         <p className="text-sm text-slate-500">Reste à dépenser ce mois-ci</p>
-        <p className={`my-1 text-5xl font-bold ${remainingColor}`}><Money cents={data.remaining} /></p>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-          <div><p className="text-slate-500">Revenus</p><p className="font-semibold text-emerald-600"><Money cents={data.income} /></p></div>
-          <div><p className="text-slate-500">Dépensé</p><p className="font-semibold"><Money cents={data.expense} /></p></div>
-          <div><p className="text-slate-500">À venir</p><p className="font-semibold text-amber-600"><Money cents={data.upcomingExpense} /></p></div>
+        <p className={`my-1 font-bold ${tailleDuMontant(data.remaining)} ${remainingColor}`}><Money cents={data.remaining} /></p>
+        <div className="mt-3 grid grid-cols-3 gap-x-3 text-center text-sm">
+          <div className="min-w-0"><p className="text-slate-500">Revenus</p><p className="break-words text-xs font-semibold text-emerald-600 sm:text-sm"><Money cents={data.income} /></p></div>
+          <div className="min-w-0"><p className="text-slate-500">Dépensé</p><p className="break-words text-xs font-semibold sm:text-sm"><Money cents={data.expense} /></p></div>
+          <div className="min-w-0"><p className="text-slate-500">À venir</p><p className="break-words text-xs font-semibold text-amber-600 sm:text-sm"><Money cents={data.upcomingExpense} /></p></div>
         </div>
       </section>
 
