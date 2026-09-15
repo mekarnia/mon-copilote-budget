@@ -5,6 +5,14 @@ import { readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const racine = new URL("..", import.meta.url).pathname;
+
+// Mode « dépendances » : 1 s'il faut relancer npm install.
+if (process.argv[2] === "--deps") {
+  const marque = join(racine, "node_modules", ".package-lock.json");
+  const verrou = join(racine, "package-lock.json");
+  if (!existsSync(marque) || !existsSync(verrou)) process.exit(1);
+  process.exit(statSync(verrou).mtimeMs > statSync(marque).mtimeMs ? 1 : 0);
+}
 const repere = join(racine, "dist", "index.html");
 if (!existsSync(repere)) process.exit(1);
 

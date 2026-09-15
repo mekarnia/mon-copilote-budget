@@ -91,7 +91,11 @@ export function TransactionFormPage() {
     if (existing.note) setShowMore(true);
   }, [existing]);
 
-  useEffect(() => () => recognizerRef.current?.abort(), []);
+  useEffect(() => {
+    return () => {
+      recognizerRef.current?.abort();
+    };
+  }, []);
 
   function applyDraft(d: TransactionDraft) {
     if (d.type) setType(d.type);

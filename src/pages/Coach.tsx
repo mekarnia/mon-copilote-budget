@@ -17,7 +17,9 @@ export function CoachPage() {
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages.length, send.isPending]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, send.isPending]);
 
   async function ask(q: string) {
     const msg = q.trim();

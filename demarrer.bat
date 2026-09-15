@@ -5,6 +5,14 @@ cd /d "%~dp0"
 if not exist node_modules (
   echo Installation des dependances, une seule fois...
   call npm.cmd install --no-audit --no-fund
+) else (
+  rem Une mise a jour peut changer les dependances : sans cette verification,
+  rem l'application tourne avec d'anciennes versions et plante sans raison claire.
+  node outils\besoin-build.mjs --deps
+  if errorlevel 1 (
+    echo Mise a jour des dependances...
+    call npm.cmd install --no-audit --no-fund
+  )
 )
 
 rem Reconstruit seulement si le code a change depuis la derniere fois.
