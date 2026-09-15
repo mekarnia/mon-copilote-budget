@@ -2,6 +2,13 @@
 const fmt = new Intl.NumberFormat("fr-DZ", { style: "currency", currency: "DZD" });
 export const CURRENCY_SYMBOL = "DA";
 
+const fmtCourt = new Intl.NumberFormat("fr-DZ", { style: "currency", currency: "DZD", maximumFractionDigits: 0 });
+
+/** Montant arrondi au dinar, pour les emplacements étroits (pastilles, listes denses). */
+export function formatCentsShort(cents: number): string {
+  return fmtCourt.format(cents / 100);
+}
+
 export function formatCents(cents: number): string {
   return fmt.format(cents / 100);
 }

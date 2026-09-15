@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { IconChat } from "./icons";
 import { useRefreshAdvice, useWeeklyAdvice } from "@/lib/queries";
 import type { Insight } from "@shared/types";
 
@@ -6,7 +7,12 @@ const ICON: Record<Insight["severity"], string> = { warning: "⚠️", info: "�
 
 /** Sur l'Accueil : un seul bouton vers le coach. */
 export function CoachButton() {
-  return <Link to="/coach" className="btn-ghost w-full">💬 Poser une question sur mes chiffres</Link>;
+  return (
+    <Link to="/coach" className="card flex h-13 items-center gap-2.5 p-0 px-4 font-semibold text-brand" style={{ height: 52 }}>
+      <IconChat size={20} />
+      <span className="truncate">Poser une question</span>
+    </Link>
+  );
 }
 
 /** Dans la page du coach : le conseil de la semaine et ses constats. */

@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { CURRENCY_SYMBOL, centsToInput, formatCents, parseEuros } from "@shared/money";
+import { CURRENCY_SYMBOL, centsToInput, formatCents, formatCentsShort, parseEuros } from "@shared/money";
 
-export function Money({ cents, className = "", signed = false }: { cents: number; signed?: boolean; className?: string }) {
+export function Money({ cents, className = "", signed = false, short = false }: { cents: number; signed?: boolean; className?: string; short?: boolean }) {
   const sign = signed ? (cents > 0 ? "+" : "") : "";
-  return <span className={`tabular-nums ${className}`}>{sign}{formatCents(cents)}</span>;
+  return <span className={`tabular-nums ${className}`}>{sign}{short ? formatCentsShort(cents) : formatCents(cents)}</span>;
 }
 
 /** Saisie d'un montant en dinars, valeur exposée en centimes. Clavier numérique sur mobile. */
@@ -141,6 +141,28 @@ export function useGoBack() {
 }
 
 /** En-tête de page : flèche de retour, titre, et un emplacement libre à droite. */
+/**
+ * Aplat de marque en tête d'écran : la seule zone colorée de la page.
+ * Déborde la gouttière du Layout avec -mx-4 pour aller d'un bord à l'autre.
+ */
+export function Bandeau({ children }: { children: ReactNode }) {
+  return (
+    <section className="-mx-4 -mt-4 mb-4 bg-brand px-4 pb-5 pt-6 text-white">
+      <div className="flex flex-col gap-4">{children}</div>
+    </section>
+  );
+}
+
+/** Sous-total posé dans le bandeau, sur fond translucide. */
+export function BandeauStat({ label, value, className = "" }: { label: string; value: ReactNode; className?: string }) {
+  return (
+    <div className={`min-w-0 rounded-xl bg-white/15 px-3 py-2 ${className}`}>
+      <p className="truncate text-[11px] text-white/75">{label}</p>
+      <p className="truncate text-[13px] font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
 export function PageHeader({ title, subtitle, right }: { title: ReactNode; subtitle?: ReactNode; right?: ReactNode }) {
   const goBack = useGoBack();
   return (

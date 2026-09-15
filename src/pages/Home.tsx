@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useHome, useToVerifyCount } from "@/lib/queries";
-import { Money, ProgressBar, Empty } from "@/components/ui";
+import { Money, ProgressBar, Empty, Bandeau, BandeauStat } from "@/components/ui";
+import { CategoryBadge, IconBars, IconGear, IconWarning, categoryLook } from "@/components/icons";
 import { CoachButton } from "@/components/CoachCard";
 import { currentMonth, monthLabel } from "@shared/dates";
 import { formatCents } from "@shared/money";
@@ -29,65 +30,70 @@ export function HomePage() {
       <button className="btn-ghost w-full" onClick={() => window.location.reload()}>Réessayer</button>
     </div>;
 
-  const remainingColor = data.remaining < 0 ? "text-red-600" : data.remaining < data.income * 0.1 ? "text-amber-600" : "text-emerald-600";
+  const remainingColor = data.remaining < 0 ? "text-red-200" : data.remaining < data.income * 0.1 ? "text-amber-200" : "text-white";
   const maxCat = data.byCategory[0]?.total ?? 1;
 
   return (
     <div className="space-y-4">
-      <header className="flex items-center justify-between">
+      <Bandeau>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold capitalize text-white/80">{monthLabel(month)}</p>
+          <div className="-mr-2 flex">
+            <Link to="/suivi?vue=depenses&p=1m" className="flex size-11 items-center justify-center text-white/80" aria-label="Statistiques"><IconBars size={21} /></Link>
+            <Link to="/reglages" className="flex size-11 items-center justify-center text-white/80" aria-label="Réglages"><IconGear size={21} /></Link>
+          </div>
+        </div>
         <div>
-          <p className="text-sm text-slate-500 capitalize">{monthLabel(month)}</p>
-          <h1 className="text-2xl font-bold">Mon budget</h1>
+          <p className="text-[13px] text-white/75">Il vous reste à dépenser</p>
+          <p className={`font-bold tabular-nums ${tailleDuMontant(data.remaining)} ${remainingColor}`}><Money cents={data.remaining} /></p>
         </div>
-        <div className="flex gap-2">
-          <Link to="/suivi?vue=depenses&p=1m" className="btn-ghost px-3 py-2" aria-label="Statistiques">📊</Link>
-          <Link to="/reglages" className="btn-ghost px-3 py-2" aria-label="Réglages">⚙️</Link>
+        <div className="grid grid-cols-3 gap-2">
+          <BandeauStat label="Entré" value={<Money cents={data.income} short />} />
+          <BandeauStat label="Sorti" value={<Money cents={data.expense} short />} />
+          <BandeauStat label="À venir" value={<Money cents={data.upcomingExpense} short />} />
         </div>
-      </header>
-
-      <section className="card text-center">
-        <p className="text-sm text-slate-500">Reste à dépenser ce mois-ci</p>
-        <p className={`my-1 font-bold ${tailleDuMontant(data.remaining)} ${remainingColor}`}><Money cents={data.remaining} /></p>
-        <div className="mt-3 grid grid-cols-3 gap-x-3 text-center text-sm">
-          <div className="min-w-0"><p className="text-slate-500">Revenus</p><p className="break-words text-xs font-semibold text-emerald-600 sm:text-sm"><Money cents={data.income} /></p></div>
-          <div className="min-w-0"><p className="text-slate-500">Dépensé</p><p className="break-words text-xs font-semibold sm:text-sm"><Money cents={data.expense} /></p></div>
-          <div className="min-w-0"><p className="text-slate-500">À venir</p><p className="break-words text-xs font-semibold text-amber-600 sm:text-sm"><Money cents={data.upcomingExpense} /></p></div>
-        </div>
-      </section>
+      </Bandeau>
 
       {(toVerify?.count ?? 0) > 0 && (
-        <Link to="/verifier" className="block rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          ⚠️ {toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} importée{toVerify!.count > 1 ? "s" : ""} à vérifier <span className="font-semibold underline">Vérifier</span>
+        <Link to="/verifier" className="flex min-h-12 items-center rounded-2xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <span className="flex items-center gap-2"><IconWarning size={19} /><span className="flex-1">{toVerify!.count} transaction{toVerify!.count > 1 ? "s" : ""} à vérifier</span><span className="font-semibold">Vérifier</span></span>
         </Link>
       )}
       {data.redBudgets.length > 0 && (
-        <Link to="/budgets" className="block rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-          🔴 Budget dépassé : {data.redBudgets.map((b) => b.categoryName).join(", ")}
+        <Link to="/budgets" className="flex min-h-12 items-center rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
+          Budget dépassé : {data.redBudgets.map((b) => b.categoryName).join(", ")}
         </Link>
       )}
 
       <CoachButton />
 
-      <section className="card space-y-3">
-        {data.byCategory.length === 0 ? (
-          <p className="text-sm text-slate-500">Aucune dépense ce mois-ci. Appuyez sur + pour commencer.</p>
-        ) : (
-          data.byCategory.slice(0, 5).map((c) => (
-            <Link key={c.categoryId} to={`/transactions?categoryId=${c.categoryId}&all=1`} className="block">
-              <div className="mb-1 flex justify-between text-sm">
-                <span>{c.icon} {c.name}</span>
-                <span><Money cents={c.total} className="font-semibold" /> <span className="text-slate-400">›</span></span>
-              </div>
-              <ProgressBar ratio={c.total / maxCat} status="none" />
-            </Link>
-          ))
-        )}
-      </section>
+      {data.byCategory.length === 0 ? (
+        <section className="card"><p className="text-sm text-slate-500">Aucune dépense ce mois-ci. Appuyez sur + pour commencer.</p></section>
+      ) : (
+        <section className="space-y-2">
+          <h2 className="font-semibold">Où part l'argent</h2>
+          {data.byCategory.slice(0, 5).map((c) => {
+            const look = categoryLook(c.name);
+            return (
+              <Link key={c.categoryId} to={`/transactions?categoryId=${c.categoryId}&all=1`} className="card flex h-[60px] items-center gap-3 p-0 px-3.5">
+                <CategoryBadge name={c.name} />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="truncate text-[15px] font-semibold">{c.name}</p>
+                  <div className="h-1 rounded-full bg-slate-200 dark:bg-slate-800">
+                    <div className={`h-1 rounded-full ${look.bar}`} style={{ width: `${Math.max(2, Math.round((c.total / maxCat) * 100))}%` }} />
+                  </div>
+                </div>
+                <Money cents={c.total} className="text-[15px] font-bold" />
+              </Link>
+            );
+          })}
+        </section>
+      )}
 
       <section className="card space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Mes projets</h2>
-          <Link to="/projets" className="text-sm text-brand">Voir tout</Link>
+          <Link to="/projets" className="-my-2 flex h-11 items-center px-2 text-sm font-medium text-brand">Voir tout</Link>
         </div>
         {data.projects.length === 0 ? (
           <p className="text-sm text-slate-500">Aucun projet en cours.</p>
