@@ -15,6 +15,9 @@ const MODEL = "claude-opus-5";
 // Classer un libellé dans une catégorie est une tâche simple et répétitive :
 // Haiku la fait aussi bien pour environ un cinquième du prix, ce qui compte à l'import d'un relevé.
 const FAST_MODEL = "claude-haiku-4-5";
+/** Lire un briefing chiffré et répondre en trois phrases ne demande pas Opus. */
+export const CHAT_MODEL = "claude-sonnet-5";
+export { MODEL, FAST_MODEL };
 
 export class AiNotConfigured extends Error {
   constructor() {
@@ -159,20 +162,61 @@ export async function parseSpeech(db: DB, text: string, today = todayIso()): Pro
   return toDraft(response.parsed_output, "voice");
 }
 
-/** Appel minimal pour vérifier la clé et le modèle, et remonter l'erreur exacte de l'API. */
-export async function testKey(db: DB): Promise<{ model: string; reply: string; inputTokens: number; outputTokens: number }> {
+/** Les trois modèles dont dépend l'application, avec la fonction qui les utilise. */
+export const MODELES_UTILISES = [
+  { id: MODEL, role: "Photo de ticket, dictée, conseil de la semaine, budgets" },
+  { id: CHAT_MODEL, role: "Chat du coach" },
+  { id: FAST_MODEL, role: "Catégorisation à l'import, mémoire du coach" },
+] as const;
+
+export interface EssaiModele {
+  id: string;
+  role: string;
+  ok: boolean;
+  /** Message prêt à lire quand ça échoue. */
+  probleme?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+/** Explique une erreur de l'API en une phrase actionnable. */
+export function expliquerErreurIa(e: unknown): string {
+  const err = e as { status?: number; message?: string; error?: { error?: { message?: string } } };
+  const detail = err.error?.error?.message ?? err.message ?? "erreur inconnue";
+  switch (err.status) {
+    case 401: return "clé refusée (401) : elle est révoquée ou mal copiée";
+    case 403: return "accès interdit (403) : la clé n'a pas le droit d'utiliser ce modèle";
+    case 404: return `modèle introuvable (404) : votre compte n'y a pas accès — ${detail}`;
+    case 429: return "limite de débit atteinte (429) : réessayez dans une minute";
+    case 400: return /credit balance|billing/i.test(detail) ? "crédit épuisé : rechargez dans Billing" : `requête refusée (400) : ${detail}`;
+    default: return err.status ? `Anthropic a répondu ${err.status} : ${detail}` : detail;
+  }
+}
+
+/**
+ * Interroge chaque modèle séparément. Un seul essai global ne dirait pas lequel
+ * échoue : si le compte n'a pas accès à un modèle, seule la fonction qui s'en
+ * sert tombe en panne, et tout le reste marche.
+ */
+export async function testKey(db: DB): Promise<{ essais: EssaiModele[] }> {
   const client = getClient(db);
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    output_config: { effort: "low" },
-    messages: [{ role: "user", content: "Réponds exactement : OK" }],
-  }, { timeout: 60_000, maxRetries: 0 });
-  if (response.stop_reason === "refusal") throw new Error("Le modèle a refusé de répondre au test.");
-  if (response.stop_reason === "max_tokens") throw new Error("Réponse coupée : max_tokens trop bas pour ce modèle.");
-  const reply = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-  if (!reply) throw new Error("Le modèle a répondu sans texte.");
-  return { model: response.model, reply, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
+  const essais: EssaiModele[] = [];
+  for (const m of MODELES_UTILISES) {
+    try {
+      const reponse = await client.messages.create({
+        model: m.id,
+        max_tokens: 16000,
+        messages: [{ role: "user", content: "Réponds exactement : OK" }],
+      }, { timeout: 60_000, maxRetries: 0 });
+      const texte = reponse.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+      if (reponse.stop_reason === "max_tokens") essais.push({ ...m, ok: false, probleme: "réponse coupée : max_tokens trop bas" });
+      else if (!texte) essais.push({ ...m, ok: false, probleme: "le modèle a répondu sans texte" });
+      else essais.push({ ...m, ok: true, inputTokens: reponse.usage.input_tokens, outputTokens: reponse.usage.output_tokens });
+    } catch (e) {
+      essais.push({ ...m, ok: false, probleme: expliquerErreurIa(e) });
+    }
+  }
+  return { essais };
 }
 
 const categorySchema = z.object({ category_id: z.number().int().nullable() });

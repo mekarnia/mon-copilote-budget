@@ -313,10 +313,15 @@ function BackupSettings() {
             </button>
             <ErrorBanner error={testAi.error} />
             {testAi.data && (
-              <p className="text-sm text-emerald-600">
-                ✅ La clé fonctionne. Modèle : {testAi.data.model}. Réponse : « {testAi.data.reply} ».
-                {" "}{testAi.data.inputTokens} jetons en entrée, {testAi.data.outputTokens} en sortie.
-              </p>
+              <div className="space-y-2">
+                {testAi.data.essais.map((e) => (
+                  <div key={e.id} className={`rounded-xl px-3 py-2 text-sm ${e.ok ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"}`}>
+                    <p className="font-semibold">{e.ok ? "Fonctionne" : "En panne"} · {e.id}</p>
+                    <p className="text-xs opacity-90">{e.role}</p>
+                    {e.probleme && <p className="mt-1 font-medium">{e.probleme}</p>}
+                  </div>
+                ))}
+              </div>
             )}
           </>
         )}

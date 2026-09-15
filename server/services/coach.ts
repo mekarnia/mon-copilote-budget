@@ -1,7 +1,7 @@
 import type { DB } from "../db.js";
 import type { ChatMessage, Insight, WeeklyAdvice } from "../../shared/types.js";
 import { isoWeek, todayIso } from "../../shared/dates.js";
-import { AiNotConfigured, getClient } from "./ai.js";
+import { AiNotConfigured, CHAT_MODEL, FAST_MODEL, MODEL, getClient } from "./ai.js";
 import { computeInsights } from "./insights.js";
 import { financialBriefing } from "./briefing.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
@@ -9,14 +9,7 @@ import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
-// Voir ai.ts : avec Opus 5, max_tokens doit laisser de la place à la réflexion,
-// sinon la réponse revient vide et le coach retombe silencieusement sur ses textes types.
-const MODEL = "claude-opus-5";
-// Le chat est la seule fonction posée à la demande, plusieurs fois par jour :
-// Sonnet 5 suffit très largement pour lire un briefing chiffré, à 2,5 fois moins cher qu'Opus.
-const CHAT_MODEL = "claude-sonnet-5";
-// Résumer d'anciens messages ne demande aucune finesse : le modèle le moins cher fait l'affaire.
-const MEMO_MODEL = "claude-haiku-4-5";
+const MEMO_MODEL = FAST_MODEL;
 
 /** Messages envoyés tels quels ; au-delà, ils passent dans la mémoire résumée. */
 const HISTORY_KEPT = 6;

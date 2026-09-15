@@ -18,7 +18,7 @@ import * as budgets from "./services/budgets.js";
 import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
-import { AiNotConfigured, CLE_VALIDE, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
+import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
@@ -334,19 +334,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   // ---- MVC 2 : IA, catégorisation, import ----
   const aiError = (e: unknown) => {
     if (e instanceof AiNotConfigured) throw new HttpError(400, e.message);
-    const err = e as { status?: number; message?: string; error?: { error?: { type?: string; message?: string } } };
-    const statut = err.status;
-    const detail = err.error?.error?.message ?? err.message ?? "Erreur IA";
-    // Chaque cause a sa propre issue : dire laquelle, sinon l'utilisateur ne peut rien faire.
-    if (statut === 401) throw new HttpError(502, "Clé IA refusée par Anthropic (401). Elle est peut-être révoquée : créez-en une nouvelle sur console.anthropic.com et recollez-la dans Réglages.");
-    if (statut === 403) throw new HttpError(502, "Accès refusé par Anthropic (403). La clé n'a pas le droit d'utiliser ce modèle.");
-    if (statut === 429) throw new HttpError(502, "Limite de débit atteinte chez Anthropic (429). Réessayez dans une minute.");
-    if (statut === 400 && /credit balance|billing/i.test(detail)) throw new HttpError(502, "Crédit Anthropic épuisé. Rechargez votre solde sur console.anthropic.com, rubrique Billing.");
-    if (statut === 404) throw new HttpError(502, `Modèle introuvable côté Anthropic (404) : ${detail}`);
-    throw new HttpError(502, statut ? `Anthropic a répondu ${statut} : ${detail}` : detail);
+    throw new HttpError(502, `L'IA n'a pas pu répondre : ${expliquerErreurIa(e)}. Testez la clé dans Réglages pour savoir quel modèle est en cause.`);
   };
 
-  /** Diagnostic : un appel réel, avec l'erreur brute de l'API si ça échoue. */
   api.get("/ai/test", async (c) => {
     try {
       if (!hasKey()) throw new AiNotConfigured();
