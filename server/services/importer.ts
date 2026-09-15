@@ -2,7 +2,7 @@ import type { DB } from "../db.js";
 import type { ImportBatch, ImportColumnMapping, ImportCommitInput, ImportPreview, ImportPreviewRow, TxType } from "../../shared/types.js";
 import { addDays } from "../../shared/dates.js";
 import { createTransaction } from "./transactions.js";
-import { matchRule, normalizeLabel } from "./rules.js";
+import { loadRules, matchRule, normalizeLabel } from "./rules.js";
 import { listCategories } from "./categories.js";
 import { matchBankCategory } from "./bankCategories.js";
 
@@ -200,9 +200,10 @@ export function preview(db: DB, csv: string, walletId: number, bank: string | nu
 /** Indique pour chaque ligne si sa catégorie viendra d'une règle apprise, du relevé, ou de l'IA. */
 export function markCategorySource(db: DB, rows: ImportPreviewRow[]): void {
   const categories = listCategories(db);
+  const regles = loadRules(db);
   for (const r of rows) {
     if (r.error || r.type === null) { r.categorySource = null; continue; }
-    if (matchRule(db, r.label)) r.categorySource = "rule";
+    if (regles.match(r.label)) r.categorySource = "rule";
     else if (matchBankCategory(categories, r.type, r.bankCategory, r.bankSubCategory) !== null) r.categorySource = "bank";
     else r.categorySource = "ai";
   }
@@ -223,11 +224,12 @@ export async function commit(
   const importId = Number(res.lastInsertRowid);
   let created = 0, skipped = 0;
   const categories = listCategories(db);
+  const regles = loadRules(db); // un seul chargement pour tout l'import
   const cache = new Map<string, number | null>();
   for (const r of rows) {
     if (r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)) { skipped++; continue; }
     const norm = normalizeLabel(r.label);
-    let categoryId = matchRule(db, r.label)?.categoryId ?? null;
+    let categoryId = regles.match(r.label)?.categoryId ?? null;
     const known = categoryId !== null; // libellé déjà validé par le passé
     // Le classement de la banque avant l'IA : il est gratuit, instantané et déjà fiable.
     if (categoryId === null) categoryId = matchBankCategory(categories, r.type!, r.bankCategory, r.bankSubCategory);

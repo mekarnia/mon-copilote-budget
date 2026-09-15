@@ -25,18 +25,39 @@ export function learnRule(db: DB, label: string, categoryId: number, walletId: n
 }
 
 /** Règle exacte d'abord, puis règle dont le motif est contenu dans le libellé (le plus long gagne). */
+interface RuleRow { pattern: string; category_id: number; wallet_id: number | null }
+
+/**
+ * Jeu de règles chargé une fois, pour rapprocher beaucoup de libellés d'affilée.
+ * Sans lui, un import de 30 000 lignes rechargeait les règles 30 000 fois :
+ * près d'une demi-minute passée à relire la même table.
+ */
+export function loadRules(db: DB) {
+  const rows = db.prepare("SELECT pattern, category_id, wallet_id FROM category_rules ORDER BY LENGTH(pattern) DESC").all() as unknown as RuleRow[];
+  const exactes = new Map(rows.map((r) => [r.pattern, r]));
+  return {
+    match(label: string): CategorySuggestion | null {
+      const norm = normalizeLabel(label);
+      if (!norm) return null;
+      const exact = exactes.get(norm);
+      if (exact) return { categoryId: exact.category_id, walletId: exact.wallet_id, source: "rule" };
+      for (const r of rows) {
+        if (r.pattern.length >= 3 && (norm.includes(r.pattern) || r.pattern.includes(norm))) {
+          return { categoryId: r.category_id, walletId: r.wallet_id, source: "rule" };
+        }
+      }
+      return null;
+    },
+  };
+}
+
+/** Rapprochement d'un libellé isolé. Pour une série, préférer loadRules. */
 export function matchRule(db: DB, label: string): CategorySuggestion | null {
   const norm = normalizeLabel(label);
   if (!norm) return null;
   const exact = db.prepare("SELECT category_id, wallet_id FROM category_rules WHERE pattern = ?").get(norm) as { category_id: number; wallet_id: number | null } | undefined;
   if (exact) return { categoryId: exact.category_id, walletId: exact.wallet_id, source: "rule" };
-  const rows = db.prepare("SELECT pattern, category_id, wallet_id FROM category_rules ORDER BY LENGTH(pattern) DESC").all() as unknown as { pattern: string; category_id: number; wallet_id: number | null }[];
-  for (const r of rows) {
-    if (r.pattern.length >= 3 && (norm.includes(r.pattern) || r.pattern.includes(norm))) {
-      return { categoryId: r.category_id, walletId: r.wallet_id, source: "rule" };
-    }
-  }
-  return null;
+  return loadRules(db).match(label);
 }
 
 export function listRules(db: DB) {

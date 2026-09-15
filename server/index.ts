@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import path from "node:path";
 import { openDb } from "./db.js";
 import { createApp } from "./app.js";
+import { migrateKeyOutOfDb, setKeyFile } from "./services/ai.js";
 import { runDueRecurrences } from "./services/recurrences.js";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -9,6 +10,9 @@ const dataDir = process.env.BUDGET_DATA_DIR ?? path.join(root, "data");
 const port = Number(process.env.PORT ?? 3001);
 
 const db = openDb(path.join(dataDir, "budget.sqlite"));
+setKeyFile(path.join(dataDir, "cle-ia.txt"));
+migrateKeyOutOfDb(db);
+
 const app = createApp({ db, uploadsDir: path.join(dataDir, "uploads"), distDir: path.join(root, "dist") });
 
 runDueRecurrences(db);

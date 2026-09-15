@@ -146,12 +146,22 @@ function migrate(db: DB) {
   }
 }
 
+/** Colonnes filtrées en permanence ; certaines n'existent qu'après migration. */
+const INDEX_APRES_MIGRATION = `
+CREATE INDEX IF NOT EXISTS idx_tx_to_wallet ON transactions(to_wallet_id);
+CREATE INDEX IF NOT EXISTS idx_tx_category ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_tx_status ON transactions(status);
+CREATE INDEX IF NOT EXISTS idx_tx_import ON transactions(import_id);
+CREATE INDEX IF NOT EXISTS idx_tx_type_date ON transactions(type, date);
+`;
+
 export function openDb(file: string): DB {
   if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.exec(SCHEMA);
   migrate(db);
+  db.exec(INDEX_APRES_MIGRATION);
   seedIfEmpty(db);
   return db;
 }

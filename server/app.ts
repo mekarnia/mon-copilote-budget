@@ -18,7 +18,7 @@ import * as budgets from "./services/budgets.js";
 import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
-import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory, testKey } from "./services/ai.js";
+import { AiNotConfigured, CLE_VALIDE, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
@@ -31,6 +31,27 @@ export interface AppOptions {
   db: DB;
   uploadsDir: string;
   distDir?: string;
+}
+
+/**
+ * Seules la machine elle-même et le réseau domestique peuvent appeler l'API.
+ * Sans cela, une page web ouverte dans le navigateur pouvait lire toutes les données.
+ */
+function origineAutorisee(origine: string | undefined): boolean {
+  if (!origine) return true; // même origine : le navigateur n'envoie pas d'en-tête Origin
+  try {
+    const h = new URL(origine).hostname;
+    return (
+      h === "localhost" ||
+      h === "127.0.0.1" ||
+      h === "::1" ||
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(h) ||
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(h)
+    );
+  } catch {
+    return false;
+  }
 }
 
 class HttpError extends Error {
@@ -53,11 +74,14 @@ const id = (s: string) => {
 
 export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   const app = new Hono();
-  app.use("/api/*", cors());
+  app.use("/api/*", cors({ origin: (origine) => (origineAutorisee(origine) ? origine : "") }));
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
-    console.error(err);
-    return c.json({ error: err.message || "Erreur serveur" }, 500);
+    // Le détail part dans le journal, pas au client : un message de moteur SQL
+    // renvoyé tel quel est une carte du système offerte à qui sonde.
+    const ref = Math.random().toString(36).slice(2, 8);
+    console.error(`[${ref}]`, err);
+    return c.json({ error: `Erreur interne du serveur (référence ${ref}).` }, 500);
   });
 
   const api = new Hono();
@@ -284,7 +308,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.get("/settings", (c) => {
     const rows = db.prepare("SELECT key, value FROM settings").all() as unknown as { key: string; value: string }[];
     const out: Record<string, string> = {};
-    for (const r of rows) out[r.key] = r.key === "aiKey" ? (r.value ? "••••" + r.value.slice(-4) : "") : r.value;
+    for (const r of rows) out[r.key] = r.value;
+    const cle = readKey();
+    out.aiKey = cle ? "••••" + cle.slice(-4) : "";
     return c.json(out);
   });
   api.put("/settings", async (c) => {
@@ -294,10 +320,10 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
       if (typeof v !== "string" || k.length >= 40) continue;
       if (k === "aiKey") {
         const key = v.trim();
-        if (key && !/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(key)) {
-          throw new HttpError(400, "Ce n'est pas une clé Anthropic. Elle commence par sk-ant- et ne contient que des lettres, chiffres et tirets. Copiez-la depuis console.anthropic.com → API Keys.");
+        if (key && !CLE_VALIDE.test(key)) {
+          throw new HttpError(400, "Ce n'est pas une clé Anthropic. Elle commence par sk-ant- et ne contient que des lettres, chiffres et tirets. Copiez-la depuis console.anthropic.com puis API Keys.");
         }
-        up.run(k, key);
+        writeKey(key);
         continue;
       }
       up.run(k, v);
@@ -315,6 +341,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   /** Diagnostic : un appel réel, avec l'erreur brute de l'API si ça échoue. */
   api.get("/ai/test", async (c) => {
     try {
+      if (!hasKey()) throw new AiNotConfigured();
       return c.json({ ok: true, ...(await testKey(db)) });
     } catch (e) {
       return aiError(e);

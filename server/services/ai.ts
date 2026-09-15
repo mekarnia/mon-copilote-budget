@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
@@ -20,12 +22,53 @@ export class AiNotConfigured extends Error {
   }
 }
 
-export function getClient(db: DB): Anthropic {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'aiKey'").get() as { value: string } | undefined;
-  if (!row?.value) throw new AiNotConfigured();
-  if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(row.value)) throw new Error("La clé IA enregistrée est invalide. Recollez-la dans Réglages, elle commence par sk-ant-.");
-  return new Anthropic({ apiKey: row.value });
+const CLE_VALIDE = /^sk-ant-[A-Za-z0-9_\-]{20,}$/;
+
+/** Fichier de la clé, hors base : elle ne doit pas voyager avec une sauvegarde. */
+let fichierCle = "";
+export function setKeyFile(chemin: string): void {
+  fichierCle = chemin;
 }
+
+/** Variable d'environnement d'abord, fichier ensuite. Jamais la base. */
+export function readKey(): string {
+  const env = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+  if (env) return env;
+  try {
+    return fichierCle ? fs.readFileSync(fichierCle, "utf8").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function writeKey(cle: string): void {
+  if (!fichierCle) throw new Error("Emplacement de la clé non configuré.");
+  fs.mkdirSync(path.dirname(fichierCle), { recursive: true });
+  if (cle) fs.writeFileSync(fichierCle, cle, { mode: 0o600 });
+  else fs.rmSync(fichierCle, { force: true });
+}
+
+/** Déplace une clé restée en base vers le fichier, puis l'efface de la base. */
+export function migrateKeyOutOfDb(db: DB): void {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'aiKey'").get() as { value: string } | undefined;
+  if (row?.value) {
+    if (!readKey()) writeKey(row.value.trim());
+    db.prepare("DELETE FROM settings WHERE key = 'aiKey'").run();
+  }
+}
+
+export function hasKey(): boolean {
+  return readKey() !== "";
+}
+
+export function getClient(_db?: DB): Anthropic {
+  const cle = readKey();
+  if (!cle) throw new AiNotConfigured();
+  if (!CLE_VALIDE.test(cle)) throw new Error("La clé IA enregistrée est invalide. Recollez-la dans Réglages, elle commence par sk-ant-.");
+  return new Anthropic({ apiKey: cle });
+}
+
+export { CLE_VALIDE };
 
 const draftSchema = z.object({
   type: z.enum(["expense", "income", "transfer"]).nullable(),
