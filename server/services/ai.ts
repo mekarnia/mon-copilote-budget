@@ -7,10 +7,12 @@ import { todayIso } from "../../shared/dates.js";
 import { listCategories } from "./categories.js";
 import { listWallets } from "./wallets.js";
 
+// Opus 5 réfléchit par défaut, et ses jetons de réflexion sont décomptés de max_tokens :
+// une limite basse laisse le modèle épuiser son budget en réflexion et ne rien répondre.
 const MODEL = "claude-opus-5";
 // Classer un libellé dans une catégorie est une tâche simple et répétitive :
 // Haiku la fait aussi bien pour environ un cinquième du prix, ce qui compte à l'import d'un relevé.
-const FAST_MODEL = "claude-haiku-4-5-20251001";
+const FAST_MODEL = "claude-haiku-4-5";
 
 export class AiNotConfigured extends Error {
   constructor() {
@@ -81,7 +83,7 @@ export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jp
   const client = getClient(db);
   const response = await client.messages.parse({
     model: MODEL,
-    max_tokens: 2000,
+    max_tokens: 16000,
     system: system(db, today),
     messages: [
       {
@@ -94,6 +96,7 @@ export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jp
     ],
     output_config: { format: zodOutputFormat(draftSchema) },
   });
+  if (response.stop_reason === "max_tokens") throw new Error("La réponse de l'IA a été coupée avant la fin. Réessayez.");
   if (!response.parsed_output) throw new Error("Lecture du ticket impossible, réessayez avec une photo plus nette.");
   return toDraft(response.parsed_output, "photo");
 }
@@ -103,13 +106,30 @@ export async function parseSpeech(db: DB, text: string, today = todayIso()): Pro
   const client = getClient(db);
   const response = await client.messages.parse({
     model: MODEL,
-    max_tokens: 1500,
+    max_tokens: 16000,
     system: system(db, today),
     messages: [{ role: "user", content: `Phrase dictée : « ${text} »` }],
     output_config: { format: zodOutputFormat(draftSchema) },
   });
+  if (response.stop_reason === "max_tokens") throw new Error("La réponse de l'IA a été coupée avant la fin. Réessayez.");
   if (!response.parsed_output) throw new Error("Je n'ai pas compris, reformulez en indiquant le montant.");
   return toDraft(response.parsed_output, "voice");
+}
+
+/** Appel minimal pour vérifier la clé et le modèle, et remonter l'erreur exacte de l'API. */
+export async function testKey(db: DB): Promise<{ model: string; reply: string; inputTokens: number; outputTokens: number }> {
+  const client = getClient(db);
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    messages: [{ role: "user", content: "Réponds exactement : OK" }],
+  }, { timeout: 60_000, maxRetries: 0 });
+  if (response.stop_reason === "refusal") throw new Error("Le modèle a refusé de répondre au test.");
+  if (response.stop_reason === "max_tokens") throw new Error("Réponse coupée : max_tokens trop bas pour ce modèle.");
+  const reply = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  if (!reply) throw new Error("Le modèle a répondu sans texte.");
+  return { model: response.model, reply, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens };
 }
 
 const categorySchema = z.object({ category_id: z.number().int().nullable() });
@@ -119,7 +139,7 @@ export async function suggestCategory(db: DB, label: string): Promise<number | n
   const client = getClient(db);
   const response = await client.messages.parse({
     model: FAST_MODEL,
-    max_tokens: 500,
+    max_tokens: 1000,
     output_config: { format: zodOutputFormat(categorySchema) },
     system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
     messages: [{ role: "user", content: `Libellé : « ${label} »` }],

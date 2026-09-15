@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
-  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useWallets,
+  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useTestAiKey, useWallets,
 } from "@/lib/queries";
 import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -268,6 +268,7 @@ function RecurrencesSettings() {
 function BackupSettings() {
   const { data: settings = {} } = useSettings();
   const saveSettings = useSaveSettings();
+  const testAi = useTestAiKey();
   const restore = useRestoreBackup();
   const [aiKey, setAiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -305,6 +306,20 @@ function BackupSettings() {
         </form>
         <ErrorBanner error={saveSettings.error} />
         {saveSettings.isSuccess && <p className="text-sm text-emerald-600">Clé enregistrée.</p>}
+        {settings.aiKey && (
+          <>
+            <button className="btn-ghost w-full" disabled={testAi.isPending} onClick={() => testAi.mutate()}>
+              {testAi.isPending ? "Test en cours…" : "Tester la clé IA"}
+            </button>
+            <ErrorBanner error={testAi.error} />
+            {testAi.data && (
+              <p className="text-sm text-emerald-600">
+                ✅ La clé fonctionne. Modèle : {testAi.data.model}. Réponse : « {testAi.data.reply} ».
+                {" "}{testAi.data.inputTokens} jetons en entrée, {testAi.data.outputTokens} en sortie.
+              </p>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

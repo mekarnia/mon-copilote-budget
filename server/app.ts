@@ -18,7 +18,7 @@ import * as budgets from "./services/budgets.js";
 import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
-import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory } from "./services/ai.js";
+import { AiNotConfigured, extractReceipt, parseSpeech, suggestCategory, testKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
@@ -311,6 +311,15 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     const msg = (e as Error).message || "Erreur IA";
     throw new HttpError(502, /401|authentication|invalid x-api-key/i.test(msg) ? "Clé IA refusée : vérifiez-la dans Réglages." : msg);
   };
+
+  /** Diagnostic : un appel réel, avec l'erreur brute de l'API si ça échoue. */
+  api.get("/ai/test", async (c) => {
+    try {
+      return c.json({ ok: true, ...(await testKey(db)) });
+    } catch (e) {
+      return aiError(e);
+    }
+  });
 
   api.post("/ai/receipt", async (c) => {
     const form = await c.req.formData();

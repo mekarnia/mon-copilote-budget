@@ -8,6 +8,8 @@ import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
+// Voir ai.ts : avec Opus 5, max_tokens doit laisser de la place à la réflexion,
+// sinon la réponse revient vide et le coach retombe silencieusement sur ses textes types.
 const MODEL = "claude-opus-5";
 
 const TONE = `Tu es le coach budget d'une famille française. Ton : bienveillant, concret, sans jugement ni morale, tutoiement.
@@ -29,7 +31,7 @@ async function aiMessage(db: DB, insights: Insight[]): Promise<string> {
   const client = getClient(db);
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 600,
+    max_tokens: 16000,
     output_config: { effort: "low" },
     system: TONE,
     messages: [
@@ -40,6 +42,7 @@ async function aiMessage(db: DB, insights: Insight[]): Promise<string> {
     ],
   });
   if (response.stop_reason === "refusal") throw new Error("Réponse IA indisponible");
+  if (response.stop_reason === "max_tokens") throw new Error("Réponse IA coupée avant la fin");
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   if (!text) throw new Error("Réponse IA vide");
   return text;
@@ -93,7 +96,7 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
   const insights = computeInsights(db, today);
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 800,
+    max_tokens: 16000,
     output_config: { effort: "low" },
     system: [
       { type: "text", text: TONE },
@@ -103,6 +106,7 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
     messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: userMessage }],
   });
   if (response.stop_reason === "refusal") throw new Error("Je ne peux pas répondre à cette question.");
+  if (response.stop_reason === "max_tokens") throw new Error("La réponse a été coupée avant la fin. Reformulez plus court.");
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim() || "Je n'ai pas de réponse pour cette question.";
   const res = db.prepare("INSERT INTO chat_messages (role, content) VALUES ('assistant', ?)").run(text);
   return mapMsg(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(Number(res.lastInsertRowid)) as unknown as MsgRow);
@@ -124,7 +128,7 @@ export async function suggestedBudgets(db: DB, month: string): Promise<{ items: 
     const client = getClient(db);
     const response = await client.messages.parse({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 16000,
       output_config: { effort: "low", format: zodOutputFormat(budgetSchema) },
       system: `${TONE}\nTu proposes les budgets mensuels d'une famille pour le mois ${month}, catégorie par catégorie, à partir des dépenses réelles. Reste proche des montants calculés (écart maximal 20 %), arrondis à la centaine de dinars, et justifie chaque montant en une phrase courte qui cite un chiffre. Ne crée pas de catégorie.`,
       messages: [{ role: "user", content: JSON.stringify(base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_da: b.previousBudget / 100, last_month_spent_da: b.lastSpent / 100, average_3_months_da: b.average3 / 100, saved_last_month_da: b.saved / 100, computed_suggestion_da: b.suggested / 100 }))) }],
@@ -168,7 +172,7 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
     const client = getClient(db);
     const response = await client.messages.parse({
       model: MODEL,
-      max_tokens: 800,
+      max_tokens: 16000,
       output_config: { effort: "low", format: zodOutputFormat(goalSchema) },
       system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la centaine de dinars ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.`,
       messages: [{
@@ -180,7 +184,7 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
           frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_da: l.total / 100, category: l.categoryName })),
         }),
       }],
-    }, { timeout: 25_000, maxRetries: 0 });
+    }, { timeout: 60_000, maxRetries: 0 });
     const p = response.parsed_output;
     if (p && p.target_da > 0) {
       const cents = Math.round(p.target_da * 100);

@@ -96,6 +96,9 @@ export const useBulkTransactions = () =>
   useWrite((body: { ids: number[]; action: "confirm" | "recategorize" | "delete"; categoryId: number | null }) =>
     api.post<{ done: number }>("/api/transactions/bulk", body));
 export const categorize = (label: string) => api.get<CategorySuggestion>(`/api/categorize?label=${encodeURIComponent(label)}`);
+export interface AiTestResult { ok: true; model: string; reply: string; inputTokens: number; outputTokens: number }
+/** Diagnostic de la clé IA : un vrai appel, pour voir l'erreur exacte. */
+export const useTestAiKey = () => useMutation({ mutationFn: () => api.get<AiTestResult>("/api/ai/test") });
 export const useParseSpeech = () => useMutation({ mutationFn: (text: string) => api.post<TransactionDraft>("/api/ai/parse", { text }) });
 export const useExtractReceipt = () =>
   useMutation({
