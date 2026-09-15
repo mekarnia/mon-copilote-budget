@@ -2,7 +2,8 @@ import type { DB } from "../db.js";
 import type { ChatMessage, Insight, WeeklyAdvice } from "../../shared/types.js";
 import { isoWeek, todayIso } from "../../shared/dates.js";
 import { AiNotConfigured, getClient } from "./ai.js";
-import { computeInsights, contextSummary } from "./insights.js";
+import { computeInsights } from "./insights.js";
+import { financialBriefing } from "./briefing.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
 import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey } from "./periods.js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -11,10 +12,47 @@ import { z } from "zod";
 // Voir ai.ts : avec Opus 5, max_tokens doit laisser de la place à la réflexion,
 // sinon la réponse revient vide et le coach retombe silencieusement sur ses textes types.
 const MODEL = "claude-opus-5";
+// Le chat est la seule fonction posée à la demande, plusieurs fois par jour :
+// Sonnet 5 suffit très largement pour lire un briefing chiffré, à 2,5 fois moins cher qu'Opus.
+const CHAT_MODEL = "claude-sonnet-5";
+// Résumer d'anciens messages ne demande aucune finesse : le modèle le moins cher fait l'affaire.
+const MEMO_MODEL = "claude-haiku-4-5";
+
+/** Messages envoyés tels quels ; au-delà, ils passent dans la mémoire résumée. */
+const HISTORY_KEPT = 6;
+/** Nombre de messages accumulés avant de rafraîchir la mémoire. */
+const MEMORY_EVERY = 12;
+const MEMORY_KEY = "chatMemory";
+const MEMORY_MAX = 700;
 
 const TONE = `Tu es le coach budget d'une famille française. Ton : bienveillant, concret, sans jugement ni morale, tutoiement.
 Tu parles uniquement à partir des chiffres fournis ; si une information manque, dis-le simplement. Tu ne donnes pas de conseil financier réglementé (placements, crédit).
 Montants en dinars algériens avec le format « 1 234,56 DA ».`;
+
+/**
+ * Règles du chat. Volontairement sèches : chaque phrase supprimée ici est payée
+ * à chaque question, et chaque contrainte de brièveté est payée en jetons de sortie.
+ */
+const CHAT_RULES = `Tu conseilles une famille sur son argent. Deux casquettes en même temps : analyste financier rigoureux, et père de famille qui sait ce que coûte le quotidien.
+
+RÉPONSE
+- 3 phrases maximum. Aucune liste, aucun titre, aucun préambule, aucun emoji.
+- Toujours au moins un chiffre exact venant du briefing.
+- Question de décision (« je peux me permettre… ») : oui ou non en premier mot, puis le chiffre qui le justifie.
+- Donnée absente : dis-le en une phrase. N'invente aucun chiffre.
+
+ANALYSE, dans cet ordre
+1. Capacité d'épargne : entrées moins sorties du mois, et sa tendance sur trois mois.
+2. Fuite : la catégorie qui dérive le plus vite, pas la plus grosse.
+3. Effet à un an : toute économie mensuelle, traduis-la en montant annuel.
+4. Affectation : d'abord une réserve de trois à six mois de dépenses, ensuite les projets déclarés, ensuite seulement l'investissement.
+
+LIMITES
+- Tu parles de l'argent de cette famille, pas des marchés. Taux d'épargne, réserve de sécurité, ordre de remboursement d'une dette, coût d'opportunité d'un achat : oui.
+- Aucun produit financier nommé, aucun placement précis, aucun crédit recommandé. Si on te le demande, une phrase pour dire que c'est hors de ton rôle, puis ramène à la capacité d'épargne.
+- Ne propose que ce que l'application sait faire : créer un budget, un projet, une récurrence, un virement interne.
+
+Montants en dinars algériens, format « 1 234,56 DA ».`;
 
 /** Message de repli quand il n'y a pas de clé IA : les faits, sans fioriture. */
 export function templateMessage(insights: Insight[]): string {
@@ -86,22 +124,56 @@ export function listMessages(db: DB, limit = 50): ChatMessage[] {
 
 export function clearMessages(db: DB): void {
   db.exec("DELETE FROM chat_messages");
+  db.prepare("DELETE FROM settings WHERE key = ?").run(MEMORY_KEY);
+}
+
+interface Memory { text: string; upTo: number }
+
+function readMemory(db: DB): Memory {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(MEMORY_KEY) as { value: string } | undefined;
+  return row ? (JSON.parse(row.value) as Memory) : { text: "", upTo: 0 };
+}
+
+/**
+ * Mémoire longue : les anciens messages sont condensés en quelques lignes plutôt
+ * que renvoyés intégralement à chaque question. Le coach se souvient sans payer
+ * l'historique complet à chaque fois.
+ */
+async function refreshMemory(db: DB): Promise<void> {
+  const memory = readMemory(db);
+  const cutoff = (db.prepare(`SELECT id FROM chat_messages ORDER BY id DESC LIMIT 1 OFFSET ?`).get(HISTORY_KEPT) as { id: number } | undefined)?.id;
+  if (cutoff === undefined || cutoff <= memory.upTo) return;
+  const fresh = db.prepare("SELECT * FROM chat_messages WHERE id > ? AND id <= ? ORDER BY id").all(memory.upTo, cutoff) as unknown as MsgRow[];
+  if (fresh.length < MEMORY_EVERY) return;
+  const client = getClient(db);
+  const response = await client.messages.create({
+    model: MEMO_MODEL,
+    max_tokens: 1000,
+    system: `Tu tiens la mémoire d'un coach budget familial. Condense en ${MEMORY_MAX} caractères maximum, en français, sans titre ni liste : les objectifs annoncés par la famille, les décisions prises, les contraintes et préférences durables, les sujets déjà traités. Garde les chiffres seulement s'ils restent vrais dans le temps (un objectif, un loyer), jamais un solde du moment. Supprime tout le reste.`,
+    messages: [{ role: "user", content: `Mémoire actuelle :\n${memory.text || "(vide)"}\n\nNouveaux échanges à intégrer :\n${fresh.map((m) => `${m.role === "user" ? "Q" : "R"}: ${m.content}`).join("\n")}` }],
+  });
+  const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim().slice(0, MEMORY_MAX);
+  if (!text) return;
+  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(MEMORY_KEY, JSON.stringify({ text, upTo: cutoff } satisfies Memory));
 }
 
 export async function chat(db: DB, userMessage: string, today = todayIso()): Promise<ChatMessage> {
   const client = getClient(db); // lève AiNotConfigured avant d'enregistrer quoi que ce soit
-  const history = listMessages(db, 10);
+  // Une question restée sans réponse laisse un message utilisateur orphelin :
+  // la fenêtre pourrait alors commencer par une réponse, ce que l'API refuse.
+  const history = listMessages(db, HISTORY_KEPT);
+  while (history.length > 0 && history[0].role === "assistant") history.shift();
   db.prepare("INSERT INTO chat_messages (role, content) VALUES ('user', ?)").run(userMessage);
-  const context = contextSummary(db, today);
-  const insights = computeInsights(db, today);
+  const memory = readMemory(db);
   const response = await client.messages.create({
-    model: MODEL,
+    model: CHAT_MODEL,
     max_tokens: 16000,
     output_config: { effort: "low" },
     system: [
-      { type: "text", text: TONE },
-      { type: "text", text: `Réponds en 2 phrases maximum, avec au moins un chiffre précis tiré des données. Si la question demande une décision (« je peux me permettre… »), réponds oui ou non d'abord, puis le chiffre qui le justifie (reste à dépenser, budget restant, marge du mois dernier). Ne propose pas d'action que l'application ne permet pas : elle permet de créer un budget, un projet, une récurrence, ou un virement interne.` },
-      { type: "text", text: `Données de l'utilisateur (montants en dinars) :\n${JSON.stringify(context)}\n\nConstats de la semaine :\n${JSON.stringify(insights)}` },
+      { type: "text", text: CHAT_RULES },
+      ...(memory.text ? [{ type: "text" as const, text: `Ce que tu sais déjà de cette famille :\n${memory.text}` }] : []),
+      { type: "text", text: `Briefing chiffré :\n${financialBriefing(db, today)}` },
     ],
     messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: userMessage }],
   });
@@ -109,6 +181,8 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
   if (response.stop_reason === "max_tokens") throw new Error("La réponse a été coupée avant la fin. Reformulez plus court.");
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim() || "Je n'ai pas de réponse pour cette question.";
   const res = db.prepare("INSERT INTO chat_messages (role, content) VALUES ('assistant', ?)").run(text);
+  // La mémoire se met à jour en arrière-plan : elle ne doit jamais retarder ni faire échouer la réponse.
+  void refreshMemory(db).catch(() => undefined);
   return mapMsg(db.prepare("SELECT * FROM chat_messages WHERE id = ?").get(Number(res.lastInsertRowid)) as unknown as MsgRow);
 }
 

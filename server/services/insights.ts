@@ -99,22 +99,3 @@ export function computeInsights(db: DB, today = todayIso()): Insight[] {
   const order = { warning: 0, info: 1, good: 2 };
   return out.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 6);
 }
-
-export function contextSummary(db: DB, today = todayIso()) {
-  const month = currentMonth(new Date(today + "T12:00:00"));
-  const months = [month, shiftMonth(month, -1), shiftMonth(month, -2)];
-  const byMonth = months.map((m) => {
-    const { start, end } = monthBounds(m);
-    const cats = db.prepare(`SELECT p.name, SUM(t.amount) AS total FROM transactions t JOIN categories c ON c.id = t.category_id JOIN categories p ON p.id = COALESCE(c.parent_id, c.id)
-      WHERE t.type = 'expense' AND c.technical_key IS NULL AND t.date BETWEEN ? AND ? GROUP BY p.id ORDER BY total DESC`).all(start, end) as unknown as { name: string; total: number }[];
-    return { month: m, ...monthTotals(db, m), byCategory: cats.map((c) => ({ name: c.name, total: c.total / 100 })) };
-  });
-  return {
-    today,
-    wallets: listWallets(db).map((w) => ({ name: w.name, balance: w.balance / 100 })),
-    months: byMonth.map((m) => ({ ...m, income: m.income / 100, expense: m.expense / 100 })),
-    budgets: budgetLines(db, month).filter((b) => b.amount > 0).map((b) => ({ category: b.categoryName, budget: b.amount / 100, spent: b.spent / 100 })),
-    projects: listProjects(db, today).map((p) => ({ name: p.name, target: p.target / 100, saved: p.saved / 100, dueDate: p.dueDate, monthlyNeeded: p.monthlyNeeded === null ? null : p.monthlyNeeded / 100 })),
-    upcoming: upcomingBills(db, today, addDays(today, 30)).map((b) => ({ date: b.date, label: b.label, amount: b.amount / 100, type: b.type })),
-  };
-}

@@ -4,7 +4,7 @@ import { useChat, useClearChat, useSendChat, useSettings } from "@/lib/queries";
 import { ErrorBanner, useGoBack } from "@/components/ui";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
-const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre un vélo à 25 000 DA ?", "Où je dépense le plus ?", "Combien mettre de côté ce mois-ci ?"];
+const SUGGESTIONS = ["Combien je peux épargner ce mois-ci ?", "Quelle dépense dérive le plus ?", "Je peux me permettre 25 000 DA ?", "Où j'en serais dans un an à ce rythme ?"];
 
 export function CoachPage() {
   const goBack = useGoBack();
@@ -48,7 +48,7 @@ export function CoachPage() {
         {messages.length === 0 && <WeeklyAdvicePanel />}
         {messages.length === 0 && (
           <div className="space-y-3">
-            <p className="text-sm text-slate-500">Posez une question sur vos propres chiffres. Réponse courte, avec un montant.</p>
+            <p className="text-sm text-slate-500">Posez une question sur vos propres chiffres. Réponse en trois phrases, avec un montant. Le coach se souvient de vos échanges précédents.</p>
             <div className="flex flex-wrap gap-2">
               {SUGGESTIONS.map((s) => <button key={s} className="chip bg-slate-100 disabled:opacity-40 dark:bg-slate-800" disabled={sansCle} onClick={() => ask(s)}>{s}</button>)}
             </div>
