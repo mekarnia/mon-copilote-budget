@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useChat, useClearChat, useSendChat } from "@/lib/queries";
+import { Link } from "react-router-dom";
+import { useChat, useClearChat, useSendChat, useSettings } from "@/lib/queries";
 import { ErrorBanner, useGoBack } from "@/components/ui";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
@@ -8,6 +9,9 @@ const SUGGESTIONS = ["Combien en courses ce mois-ci ?", "Je peux me permettre un
 export function CoachPage() {
   const goBack = useGoBack();
   const { data: messages = [] } = useChat();
+  const { data: settings } = useSettings();
+  // Le coach passe par l'IA : sans clé, autant le dire tout de suite plutôt qu'après la question.
+  const sansCle = settings !== undefined && !settings.aiKey;
   const send = useSendChat();
   const clear = useClearChat();
   const [text, setText] = useState("");
@@ -35,12 +39,18 @@ export function CoachPage() {
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">
+        {sansCle && (
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Le coach répond grâce à l'IA : il lui faut votre clé Anthropic pour lire vos chiffres et vous répondre.
+            {" "}<Link to="/reglages/sauvegarde" className="font-semibold underline">L'ajouter dans Réglages</Link>. Tout le reste de l'application fonctionne sans.
+          </div>
+        )}
         {messages.length === 0 && <WeeklyAdvicePanel />}
         {messages.length === 0 && (
           <div className="space-y-3">
             <p className="text-sm text-slate-500">Posez une question sur vos propres chiffres. Réponse courte, avec un montant.</p>
             <div className="flex flex-wrap gap-2">
-              {SUGGESTIONS.map((s) => <button key={s} className="chip bg-slate-100 dark:bg-slate-800" onClick={() => ask(s)}>{s}</button>)}
+              {SUGGESTIONS.map((s) => <button key={s} className="chip bg-slate-100 disabled:opacity-40 dark:bg-slate-800" disabled={sansCle} onClick={() => ask(s)}>{s}</button>)}
             </div>
           </div>
         )}
@@ -55,8 +65,8 @@ export function CoachPage() {
       </div>
 
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
-        <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="Votre question…" disabled={send.isPending} />
-        <button className="btn-primary" disabled={!text.trim() || send.isPending}>➤</button>
+        <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={sansCle ? "Clé IA requise" : "Votre question…"} disabled={send.isPending || sansCle} />
+        <button className="btn-primary" disabled={!text.trim() || send.isPending || sansCle}>➤</button>
       </form>
     </div>
   );
