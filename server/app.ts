@@ -20,7 +20,9 @@ import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
 import { versionInfo } from "./services/version.js";
 import { aiUsageSummary } from "./services/aiUsage.js";
-import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
+import { Limiteur, plafondIa } from "./services/quotas.js";
+import { EXTENSION_IMAGE, typeImage } from "./services/securite.js";
+import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, PlafondIaAtteint, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
@@ -74,9 +76,32 @@ const id = (s: string) => {
   return n;
 };
 
+/** Qui appelle, pour compter son débit. Une seule adresse suffit à la maison. */
+function appelant(c: { req: { header: (n: string) => string | undefined } }): string {
+  return (c.req.header("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
+}
+
 export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   const app = new Hono();
+  // Les limiteurs appartiennent au serveur, pas au module : deux serveurs dans
+  // le même processus (les tests) ne doivent pas se voler leurs jetons.
+  const debitApi = new Limiteur(600, 60_000);
+  const debitIa = new Limiteur(20, 60_000);
+
   app.use("/api/*", cors({ origin: (origine) => (origineAutorisee(origine) ? origine : "") }));
+  app.use("*", async (c, next) => {
+    await next();
+    // Un fichier téléversé ne doit jamais être interprété d'après son contenu :
+    // c'est ce qui transforme un envoi de photo en page exécutée par le navigateur.
+    c.header("X-Content-Type-Options", "nosniff");
+  });
+  app.use("/api/*", async (c, next) => {
+    if (!debitApi.autorise(appelant(c))) {
+      c.header("Retry-After", String(debitApi.attente(appelant(c))));
+      return c.json({ error: "Trop de requêtes d'un coup. Réessayez dans quelques secondes." }, 429);
+    }
+    return next();
+  });
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
     // Le détail part dans le journal, pas au client : un message de moteur SQL
@@ -198,13 +223,10 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     const t = tx.getTransaction(db, txId);
     if (!t) return c.json({ error: "Introuvable" }, 404);
     const form = await c.req.formData();
-    const file = form.get("photo");
-    if (!(file instanceof File)) throw new HttpError(400, "Photo manquante");
-    if (file.size > 10 * 1024 * 1024) throw new HttpError(400, "Photo trop lourde (10 Mo max)");
-    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-    const name = `tx-${txId}-${Date.now()}.${ext}`;
+    const contenu = await photoRecue(form.get("photo"));
+    const name = `tx-${txId}-${Date.now()}.${EXTENSION_IMAGE[contenu.type]}`;
     fs.mkdirSync(uploadsDir, { recursive: true });
-    fs.writeFileSync(path.join(uploadsDir, name), Buffer.from(await file.arrayBuffer()));
+    fs.writeFileSync(path.join(uploadsDir, name), contenu.buf);
     if (t.photoPath) fs.rmSync(path.join(uploadsDir, path.basename(t.photoPath)), { force: true });
     return c.json(tx.setPhoto(db, txId, `/uploads/${name}`));
   });
@@ -335,15 +357,31 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
 
   // ---- MVC 2 : IA, catégorisation, import ----
   const aiError = (e: unknown) => {
-    if (e instanceof AiNotConfigured) throw new HttpError(400, e.message);
+    if (e instanceof AiNotConfigured || e instanceof PlafondIaAtteint) throw new HttpError(400, e.message);
     throw new HttpError(502, `L'IA n'a pas pu répondre : ${expliquerErreurIa(e)}. Testez la clé dans Réglages pour savoir quel modèle est en cause.`);
   };
 
   /** Quelle version tourne réellement : indispensable pour déboguer à distance. */
   api.get("/version", (c) => c.json(versionInfo(path.resolve(import.meta.dirname, ".."))));
 
-  /** Ce que l'IA a réellement coûté ce mois-ci, mesuré et non estimé. */
-  api.get("/ai/usage", (c) => c.json(aiUsageSummary(db, c.req.query("month") || currentMonth())));
+  /** Ce que l'IA a réellement coûté ce mois-ci, mesuré et non estimé, et ce qu'il reste avant le plafond. */
+  api.get("/ai/usage", (c) => {
+    const mois = c.req.query("month") || currentMonth();
+    return c.json({ ...aiUsageSummary(db, mois), ...plafondIa(db, mois) });
+  });
+
+  // Un appel IA coûte de l'argent : son débit se compte à part, bien plus serré
+  // que le reste de l'API, et avant même d'atteindre le modèle.
+  for (const route of ["/ai/receipt", "/ai/parse", "/coach/chat", "/import/commit", "/categorize"]) {
+    api.use(route, async (c, next) => {
+      if (c.req.method === "GET" && route !== "/categorize") return next();
+      if (!debitIa.autorise(appelant(c))) {
+        c.header("Retry-After", String(debitIa.attente(appelant(c))));
+        return c.json({ error: "Trop de demandes à l'IA en une minute. Laissez passer un instant." }, 429);
+      }
+      return next();
+    });
+  }
 
   api.get("/ai/test", async (c) => {
     try {
@@ -355,13 +393,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   });
 
   api.post("/ai/receipt", async (c) => {
-    const form = await c.req.formData();
-    const file = form.get("photo");
-    if (!(file instanceof File)) throw new HttpError(400, "Photo manquante");
-    if (file.size > 10 * 1024 * 1024) throw new HttpError(400, "Photo trop lourde (10 Mo max)");
-    const mediaType = file.type === "image/png" ? "image/png" : file.type === "image/webp" ? "image/webp" : "image/jpeg";
+    const contenu = await photoRecue((await c.req.formData()).get("photo"));
     try {
-      return c.json(await extractReceipt(db, Buffer.from(await file.arrayBuffer()), mediaType));
+      return c.json(await extractReceipt(db, contenu.buf, contenu.type));
     } catch (e) {
       return aiError(e);
     }
@@ -446,6 +480,19 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     app.get("*", (c) => c.html(fs.readFileSync(path.join(distDir, "index.html"), "utf8")));
   }
   return app;
+}
+
+/**
+ * Une photo reçue, vérifiée. Le type annoncé par le navigateur est déclaratif :
+ * seul le contenu dit ce qu'est vraiment le fichier.
+ */
+async function photoRecue(champ: unknown): Promise<{ buf: Buffer; type: "image/jpeg" | "image/png" | "image/webp" }> {
+  if (!(champ instanceof File)) throw new HttpError(400, "Photo manquante");
+  if (champ.size > 10 * 1024 * 1024) throw new HttpError(400, "Photo trop lourde (10 Mo max)");
+  const buf = Buffer.from(await champ.arrayBuffer());
+  const type = typeImage(buf);
+  if (!type) throw new HttpError(400, "Ce fichier n'est pas une image JPEG, PNG ou WebP.");
+  return { buf, type };
 }
 
 /** Les exports bancaires sont souvent en Windows-1252 : on tente UTF-8 et on bascule si des caractères sont cassés. */

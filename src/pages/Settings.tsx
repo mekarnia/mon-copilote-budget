@@ -272,7 +272,9 @@ function BackupSettings() {
   const { data: version } = useVersion();
   const { data: conso } = useAiUsage();
   const restore = useRestoreBackup();
+  const plafondEnregistre = settings.plafondIaUsd ?? "5";
   const [aiKey, setAiKey] = useState("");
+  const [plafond, setPlafond] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   async function onRestore(file: File) {
@@ -303,6 +305,36 @@ function BackupSettings() {
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Version installée</p>
         <p>Code : <span className="font-mono">{version?.commit ?? "…"}</span>{version?.date && ` · ${version.date}`}</p>
         {version?.interfaceLe && <p>Interface construite le {version.interfaceLe}</p>}
+      </div>
+
+      <div className="card space-y-2">
+        <h2 className="font-semibold">Plafond de dépense IA</h2>
+        <p className="text-sm text-slate-500">
+          Au-delà de ce montant, les fonctions IA s'arrêtent jusqu'au mois suivant. Le reste de l'application continue de
+          fonctionner. Mettez 0 pour ne pas avoir de plafond.
+        </p>
+        <form
+          className="flex items-center gap-2"
+          onSubmit={async (e) => { e.preventDefault(); await saveSettings.mutateAsync({ plafondIaUsd: (plafond ?? plafondEnregistre).trim() || "5" }); }}
+        >
+          <input className="input" inputMode="decimal" value={plafond ?? plafondEnregistre} onChange={(e) => setPlafond(e.target.value)} aria-label="Plafond mensuel en dollars" />
+          <span className="text-sm text-slate-500">$ / mois</span>
+          <button className="btn-primary">OK</button>
+        </form>
+        {conso && conso.plafondCents > 0 && (
+          <>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <div
+                className={`h-2 rounded-full ${conso.depasse ? "bg-rose-600" : "bg-brand"}`}
+                style={{ width: `${Math.min(100, Math.round((conso.consommeCents / conso.plafondCents) * 100))}%` }}
+              />
+            </div>
+            <p className={`text-xs ${conso.depasse ? "font-semibold text-rose-600" : "text-slate-500"}`}>
+              {(conso.consommeCents / 100).toFixed(2)} $ sur {(conso.plafondCents / 100).toFixed(2)} $ ce mois-ci
+              {conso.depasse && " — plafond atteint, l'IA est en pause."}
+            </p>
+          </>
+        )}
       </div>
 
       {conso && conso.appels > 0 && (

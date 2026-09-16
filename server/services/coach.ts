@@ -5,6 +5,7 @@ import { AiNotConfigured, CHAT_MODEL, FAST_MODEL, MODEL, getClient } from "./ai.
 import { computeInsights } from "./insights.js";
 import { financialBriefing } from "./briefing.js";
 import { mesurer } from "./aiUsage.js";
+import { DONNEES_NON_FIABLES, texteSur } from "./securite.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
 import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey } from "./periods.js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -65,7 +66,7 @@ async function aiMessage(db: DB, insights: Insight[]): Promise<string> {
     model: MODEL,
     max_tokens: 16000,
     output_config: { effort: "low" },
-    system: TONE,
+    system: `${TONE}\n${DONNEES_NON_FIABLES}`,
     messages: [
       {
         role: "user",
@@ -254,14 +255,16 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: "low", format: zodOutputFormat(goalSchema) },
-      system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la centaine de dinars ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.`,
+      system: `${TONE}\nTu fixes un objectif de réduction des dépenses évitables pour la prochaine période, à partir des chiffres fournis. Règles : la cible est entre 50 % et 95 % du total actuel, arrondie à la centaine de dinars ; la raison tient en une phrase et cite un chiffre ; les actions (2 ou 3) sont concrètes et s'appuient sur les libellés et catégories fournis, jamais inventés ; pas de morale.\n${DONNEES_NON_FIABLES}`,
       messages: [{
         role: "user",
         content: JSON.stringify({
           period, total_da: stats.total / 100, previous_total_da: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
           computed_target_da: calcule.target / 100, project: calcule.projectName,
-          by_category: stats.byCategory.map((c) => ({ name: c.name, total_da: c.total / 100, share: Math.round(c.share * 100) })),
-          frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_da: l.total / 100, category: l.categoryName })),
+          by_category: stats.byCategory.map((c) => ({ name: texteSur(c.name, 40), total_da: c.total / 100, share: Math.round(c.share * 100) })),
+          // Ces libellés viennent des relevés de banque, donc des commerçants :
+          // ils entrent dans la consigne comme données, jamais comme instructions.
+          frequent_labels: stats.topLabels.map((l) => ({ label: texteSur(l.label), count: l.count, total_da: l.total / 100, category: texteSur(l.categoryName ?? "", 40) })),
         }),
       }],
     }, { timeout: 60_000, maxRetries: 0 }));

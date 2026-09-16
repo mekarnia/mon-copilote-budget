@@ -9,6 +9,8 @@ import { todayIso } from "../../shared/dates.js";
 import { listCategories } from "./categories.js";
 import { listWallets } from "./wallets.js";
 import { mesurer } from "./aiUsage.js";
+import { DONNEES_NON_FIABLES, texteSur } from "./securite.js";
+import { plafondIa, PlafondIaAtteint } from "./quotas.js";
 
 // Opus 5 réfléchit par défaut, et ses jetons de réflexion sont décomptés de max_tokens :
 // une limite basse laisse le modèle épuiser son budget en réflexion et ne rien répondre.
@@ -65,14 +67,23 @@ export function hasKey(): boolean {
   return readKey() !== "";
 }
 
-export function getClient(_db?: DB): Anthropic {
+/**
+ * Passage obligé de tous les appels IA : c'est donc ici que le plafond mensuel
+ * se vérifie. Le poser sur chaque route se serait oublié à la première fonction
+ * ajoutée ; ici, une nouvelle fonction est plafonnée sans rien faire de plus.
+ */
+export function getClient(db?: DB, options: { ignorePlafond?: boolean } = {}): Anthropic {
   const cle = readKey();
   if (!cle) throw new AiNotConfigured();
   if (!CLE_VALIDE.test(cle)) throw new Error("La clé IA enregistrée est invalide. Recollez-la dans Réglages, elle commence par sk-ant-.");
+  if (db && !options.ignorePlafond) {
+    const etat = plafondIa(db);
+    if (etat.depasse) throw new PlafondIaAtteint(etat);
+  }
   return new Anthropic({ apiKey: cle });
 }
 
-export { CLE_VALIDE };
+export { CLE_VALIDE, PlafondIaAtteint };
 
 const draftSchema = z.object({
   type: z.enum(["expense", "income", "transfer"]).nullable(),
@@ -200,7 +211,9 @@ export function expliquerErreurIa(e: unknown): string {
  * sert tombe en panne, et tout le reste marche.
  */
 export async function testKey(db: DB): Promise<{ essais: EssaiModele[] }> {
-  const client = getClient(db);
+  // Vérifier sa clé doit rester possible même plafond atteint : sinon le message
+  // d'erreur envoie vers un écran qui refuse lui aussi de répondre.
+  const client = getClient(db, { ignorePlafond: true });
   const essais: EssaiModele[] = [];
   for (const m of MODELES_UTILISES) {
     try {
@@ -229,8 +242,8 @@ export async function suggestCategory(db: DB, label: string): Promise<number | n
     model: FAST_MODEL,
     max_tokens: 1000,
     output_config: { format: zodOutputFormat(categorySchema) },
-    system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
-    messages: [{ role: "user", content: `Libellé : « ${label} »` }],
+    system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${DONNEES_NON_FIABLES}\n${catalogue(listCategories(db), [])}`,
+    messages: [{ role: "user", content: `Libellé : « ${texteSur(label, 120)} »` }],
   }));
   return response.parsed_output?.category_id ?? null;
 }

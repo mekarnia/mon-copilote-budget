@@ -45,6 +45,8 @@ export const useVersion = () => useQuery({ queryKey: ["version"], queryFn: () =>
 export interface ResumeIa {
   mois: string; appels: number; entree: number; sortie: number; centsUsd: number;
   parFonction: { fonction: string; appels: number; centsUsd: number }[];
+  /** Plafond du mois en centimes de dollar ; 0 signifie sans limite. */
+  plafondCents: number; consommeCents: number; depasse: boolean;
 }
 export const useAiUsage = () => useQuery({ queryKey: ["aiUsage"], queryFn: () => api.get<ResumeIa>("/api/ai/usage") });
 export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api.get<Record<string, string>>("/api/settings") });
