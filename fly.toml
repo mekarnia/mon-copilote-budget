@@ -1,0 +1,36 @@
+# Déploiement Fly.io. Remplacez « app » par le nom que vous choisirez :
+# c'est lui qui donne l'adresse https://<nom>.fly.dev
+app = "mon-copilote-budget"
+primary_region = "cdg"   # Paris. « alg » n'existe pas ; cdg est le plus proche.
+
+[build]
+
+[env]
+  BUDGET_DATA_DIR = "/data"
+  PORT = "8080"
+
+# Le disque qui survit aux déploiements : base SQLite, photos de tickets,
+# clé IA et mot de passe. L'image est remplacée à chaque envoi, pas lui.
+[[mounts]]
+  source = "donnees"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Une seule machine : deux processus écrivant le même fichier SQLite se
+  # marcheraient dessus. Pour un foyer, une machine suffit largement.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/version"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -10,6 +10,7 @@ import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
 import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
 import { formatCents } from "@shared/money";
+import { api } from "@/lib/api";
 import { WALLET_TYPES, type Category, type Recurrence, type TxType, type Wallet, type WalletType } from "@shared/types";
 
 const WALLET_LABEL: Record<WalletType, string> = { courant: "Compte courant", especes: "Espèces", livret: "Livret / épargne", autre: "Autre" };
@@ -314,6 +315,15 @@ function BackupSettings() {
         <p className="text-sm text-slate-500">Choisissez un fichier JSON exporté depuis cette application.</p>
         <input type="file" accept="application/json" className="input" onChange={(e) => e.target.files?.[0] && onRestore(e.target.files[0])} />
         {message && <p className="text-sm">{message}</p>}
+      </div>
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Accès</h2>
+        <p className="text-sm text-slate-500">
+          Se déconnecter oblige à retaper le mot de passe sur cet appareil. À faire si vous prêtez votre téléphone.
+        </p>
+        <button className="btn-ghost w-full" onClick={async () => { await api.del("/api/session"); window.location.replace("/"); }}>
+          Se déconnecter de cet appareil
+        </button>
       </div>
       <div className="card space-y-1 text-xs text-slate-500">
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Version installée</p>

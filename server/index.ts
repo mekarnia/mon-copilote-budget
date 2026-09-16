@@ -3,6 +3,7 @@ import path from "node:path";
 import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 import { migrateKeyOutOfDb, setKeyFile } from "./services/ai.js";
+import { motDePasseConfigure, setSessionFile } from "./services/session.js";
 import { runDueRecurrences } from "./services/recurrences.js";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -11,6 +12,7 @@ const port = Number(process.env.PORT ?? 3001);
 
 const db = openDb(path.join(dataDir, "budget.sqlite"));
 setKeyFile(path.join(dataDir, "cle-ia.txt"));
+setSessionFile(path.join(dataDir, "acces.json"));
 migrateKeyOutOfDb(db);
 
 const app = createApp({ db, uploadsDir: path.join(dataDir, "uploads"), distDir: path.join(root, "dist") });
@@ -20,6 +22,10 @@ setInterval(() => runDueRecurrences(db), 60 * 60 * 1000);
 
 const server = serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, () => {
   console.log(`Mon copilote budget : API sur http://localhost:${port} (données dans ${dataDir})`);
+  // Dit à voix haute ce qui, sinon, se découvre le jour où c'est trop tard.
+  console.log(motDePasseConfigure()
+    ? "Accès protégé par mot de passe."
+    : "Aucun mot de passe : l'application ne répond qu'au réseau local. Pour l'ouvrir sur le web, choisissez-en un depuis la maison ou définissez BUDGET_MOT_DE_PASSE.");
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

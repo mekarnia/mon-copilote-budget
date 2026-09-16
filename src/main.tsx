@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App";
 import { ErrorBoundary, reinitialiser } from "./components/ErrorBoundary";
+import { PorteAcces } from "./components/PorteAcces";
 import "./index.css";
 
 registerSW({ immediate: true });
@@ -29,7 +30,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ErrorBoundary>
-          <App />
+          <PorteAcces>
+            <App />
+          </PorteAcces>
         </ErrorBoundary>
       </BrowserRouter>
     </QueryClientProvider>

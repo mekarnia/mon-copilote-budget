@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { getConnInfo } from "@hono/node-server/conninfo";
 import fs from "node:fs";
 import path from "node:path";
 import type { z } from "zod";
@@ -22,6 +24,7 @@ import { exportCsv, exportJson, importJson } from "./services/backup.js";
 import { versionInfo } from "./services/version.js";
 import { aiUsageSummary } from "./services/aiUsage.js";
 import { Limiteur, plafondIa } from "./services/quotas.js";
+import { adressePrivee, COOKIE, creerJeton, definirMotDePasse, DUREE_COOKIE, jetonValide, motDePasseConfigure, verifierMotDePasse } from "./services/session.js";
 import { EXTENSION_IMAGE, typeImage } from "./services/securite.js";
 import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, parseSpeech, PlafondIaAtteint, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
@@ -77,9 +80,44 @@ const id = (s: string) => {
   return n;
 };
 
-/** Qui appelle, pour compter son débit. Une seule adresse suffit à la maison. */
+/**
+ * Un relais est-il placé devant nous ? Sur Fly, oui ; à la maison, non.
+ *
+ * La question n'est pas cosmétique : « x-forwarded-for » est un en-tête que
+ * n'importe quel client écrit lui-même. Le croire sans relais devant soi, c'est
+ * laisser le premier venu se déclarer « 127.0.0.1 » et franchir la porte.
+ */
+const DERRIERE_RELAIS = process.env.BUDGET_DERRIERE_RELAIS === "1" || !!process.env.FLY_APP_NAME;
+
+/** L'adresse réelle de l'appelant. */
+function adresseIp(c: { req: { header: (n: string) => string | undefined } }): string | undefined {
+  if (DERRIERE_RELAIS) {
+    // Le relais ajoute l'adresse du client à la fin : les valeurs précédentes
+    // viennent du client et ne valent rien. C'est la dernière qui est la sienne.
+    const chaine = (c.req.header("x-forwarded-for") ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+    if (chaine.length > 0) return chaine[chaine.length - 1];
+  }
+  try {
+    return getConnInfo(c as unknown as Parameters<typeof getConnInfo>[0]).remote.address;
+  } catch {
+    return undefined; // hors serveur Node (les tests) : pas d'adresse, donc pas privée
+  }
+}
+
+/**
+ * L'appel vient-il du réseau de la maison ?
+ *
+ * Derrière un relais, la réponse est non par construction : « la maison » n'a
+ * plus de sens quand tout arrive par internet, et se fier à un en-tête pour en
+ * décider revient à laisser le visiteur se déclarer lui-même chez vous.
+ */
+function venuDeLaMaison(c: { req: { header: (n: string) => string | undefined } }): boolean {
+  return !DERRIERE_RELAIS && adressePrivee(adresseIp(c));
+}
+
+/** Qui appelle, pour compter son débit : la même adresse que pour la porte. */
 function appelant(c: { req: { header: (n: string) => string | undefined } }): string {
-  return (c.req.header("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
+  return adresseIp(c) ?? "local";
 }
 
 export function createApp({ db, uploadsDir, distDir }: AppOptions) {
@@ -96,7 +134,22 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     // c'est ce qui transforme un envoi de photo en page exécutée par le navigateur.
     c.header("X-Content-Type-Options", "nosniff");
   });
+  // ---- Porte d'entrée ----
+  // Trois routes doivent rester ouvertes : celle qui dit s'il faut un mot de
+  // passe, celle qui le vérifie, et la version (pour déboguer à distance).
+  const OUVERTES = new Set(["/api/session", "/api/version"]);
+
   app.use("/api/*", async (c, next) => {
+    const chemin = new URL(c.req.url).pathname;
+    if (!OUVERTES.has(chemin)) {
+      if (motDePasseConfigure()) {
+        if (!jetonValide(getCookie(c, COOKIE))) return c.json({ error: "Connectez-vous pour continuer." }, 401);
+      } else if (!venuDeLaMaison(c)) {
+        // Sans mot de passe, l'application reste à la maison. Mise en ligne par
+        // mégarde, elle se tait au lieu d'ouvrir des relevés bancaires.
+        return c.json({ error: "Aucun mot de passe n'est configuré : l'application ne répond qu'au réseau local." }, 403);
+      }
+    }
     if (!debitApi.autorise(appelant(c))) {
       c.header("Retry-After", String(debitApi.attente(appelant(c))));
       return c.json({ error: "Trop de requêtes d'un coup. Réessayez dans quelques secondes." }, 429);
@@ -113,6 +166,38 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   });
 
   const api = new Hono();
+
+  api.get("/session", (c) => c.json({
+    configure: motDePasseConfigure(),
+    connecte: jetonValide(getCookie(c, COOKIE)),
+    local: venuDeLaMaison(c),
+  }));
+  api.post("/session", async (c) => {
+    const body = (await c.req.json()) as { motDePasse?: string; nouveau?: string };
+    // Premier démarrage depuis la maison : on choisit le mot de passe ici.
+    if (!motDePasseConfigure()) {
+      if (!venuDeLaMaison(c)) throw new HttpError(403, "Le mot de passe se choisit depuis le réseau de la maison, ou se fournit au serveur par BUDGET_MOT_DE_PASSE.");
+      try {
+        definirMotDePasse(String(body.nouveau ?? ""));
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
+    } else if (!verifierMotDePasse(String(body.motDePasse ?? ""))) {
+      // Une seconde d'attente : un mot de passe ne se devine pas à la vitesse du réseau.
+      await new Promise((r) => setTimeout(r, 1000));
+      throw new HttpError(401, "Mot de passe incorrect.");
+    }
+    setCookie(c, COOKIE, creerJeton(), {
+      httpOnly: true, sameSite: "Lax", path: "/", maxAge: DUREE_COOKIE,
+      secure: new URL(c.req.url).protocol === "https:",
+    });
+    return c.json({ ok: true });
+  });
+  api.delete("/session", (c) => {
+    deleteCookie(c, COOKIE, { path: "/" });
+    return c.json({ ok: true });
+  });
+
 
   // Portefeuilles
   api.get("/wallets", (c) => c.json(wallets.listWallets(db, c.req.query("all") === "1")));
@@ -495,6 +580,12 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   app.route("/api", api);
   app.notFound((c) => (c.req.path.startsWith("/api/") ? c.json({ error: "Route inconnue" }, 404) : c.text("Not found", 404)));
 
+  // Une photo de ticket est une donnée personnelle : elle passe la même porte.
+  app.use("/uploads/*", async (c, next) => {
+    if (motDePasseConfigure() && !jetonValide(getCookie(c, COOKIE))) return c.text("Connectez-vous pour continuer.", 401);
+    if (!motDePasseConfigure() && !venuDeLaMaison(c)) return c.text("Accès refusé.", 403);
+    return next();
+  });
   app.use("/uploads/*", serveStatic({ root: path.relative(process.cwd(), path.dirname(uploadsDir)) || "." }));
   if (distDir && fs.existsSync(distDir)) {
     const rel = path.relative(process.cwd(), distDir) || ".";
