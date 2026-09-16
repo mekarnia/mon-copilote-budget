@@ -35,3 +35,28 @@ describe("règles de catégorisation", () => {
     expect(matchRule(db, "ab")).toBeNull();
   });
 });
+
+describe("frontières de mot et chiffres", () => {
+  it("garde les chiffres collés aux lettres, retire les nombres isolés", () => {
+    expect(normalizeLabel("CB M6 BOUTIQUE 12/09")).toBe("m6 boutique");
+    expect(normalizeLabel("5ASEC PRESSING 004521")).toBe("5asec pressing");
+    // Date et référence de transaction disparaissent : le même commerçant doit se retrouver.
+    expect(normalizeLabel("CARREFOUR 12/09")).toBe(normalizeLabel("CARREFOUR 15/10"));
+  });
+
+  it("une règle ne capture plus les mots qui la contiennent", () => {
+    const db = memDb();
+    learnRule(db, "AUTO ECOLE", catId(db, "Divers"), null);
+    // « auto » ne doit pas happer autoroute ni automobile.
+    expect(matchRule(db, "PEAGE AUTOROUTE A7")).toBeNull();
+    expect(matchRule(db, "GARAGE AUTOMOBILE DUPONT")).toBeNull();
+    expect(matchRule(db, "AUTO ECOLE DU CENTRE")).not.toBeNull();
+  });
+
+  it("retrouve une enseigne de trois lettres, mot entier seulement", () => {
+    const db = memDb();
+    learnRule(db, "EDF", catId(db, "Électricité et gaz"), null);
+    expect(matchRule(db, "PRLV SEPA EDF DU 07/09")).not.toBeNull();
+    expect(matchRule(db, "REDFORD SHOP")).toBeNull();
+  });
+});

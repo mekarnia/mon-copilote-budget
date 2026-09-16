@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
-  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useSettings, useTestAiKey, useVersion, useWallets,
+  useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useAiUsage, useSettings, useTestAiKey, useVersion, useWallets,
 } from "@/lib/queries";
 import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader } from "@/components/ui";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -270,6 +270,7 @@ function BackupSettings() {
   const saveSettings = useSaveSettings();
   const testAi = useTestAiKey();
   const { data: version } = useVersion();
+  const { data: conso } = useAiUsage();
   const restore = useRestoreBackup();
   const [aiKey, setAiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -303,6 +304,27 @@ function BackupSettings() {
         <p>Code : <span className="font-mono">{version?.commit ?? "…"}</span>{version?.date && ` · ${version.date}`}</p>
         {version?.interfaceLe && <p>Interface construite le {version.interfaceLe}</p>}
       </div>
+
+      {conso && conso.appels > 0 && (
+        <div className="card space-y-2">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-semibold">Ce que l'IA a coûté ce mois-ci</h2>
+            <span className="text-lg font-bold tabular-nums">{(conso.centsUsd / 100).toFixed(2)} $</span>
+          </div>
+          <p className="text-xs text-slate-500">
+            {conso.appels} appel{conso.appels > 1 ? "s" : ""} · {conso.entree.toLocaleString("fr-FR")} jetons en entrée,
+            {" "}{conso.sortie.toLocaleString("fr-FR")} en sortie. Mesuré, pas estimé.
+          </p>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {conso.parFonction.map((f) => (
+              <div key={f.fonction} className="flex items-center justify-between py-1.5 text-sm">
+                <span className="min-w-0 truncate">{f.fonction}<span className="text-slate-400"> · {f.appels}</span></span>
+                <span className="shrink-0 tabular-nums">{(f.centsUsd / 100).toFixed(2)} $</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card space-y-3">
         <h2 className="font-semibold">Clé IA (photo de ticket, dictée, catégorisation)</h2>

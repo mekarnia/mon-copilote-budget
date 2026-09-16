@@ -1,23 +1,45 @@
 import type { DB } from "../db.js";
 import type { CategorySuggestion } from "../../shared/types.js";
 
-/** Normalise un libellé bancaire : minuscules, sans accents, sans chiffres ni ponctuation, espaces réduits. */
+/**
+ * Normalise un libellé bancaire : minuscules, sans accents, sans ponctuation.
+ * Les nombres isolés disparaissent — ce sont des dates et des références de
+ * transaction, qui changent à chaque passage du même commerçant. Les chiffres
+ * collés à des lettres restent : « M6 », « B2B » ou « 5asec » font partie du nom.
+ */
 export function normalizeLabel(label: string): string {
   return label
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/(cb|carte|paiement|prlv|prelevement|vir|virement|sepa|facture|achat)\b/g, " ")
-    .replace(/[0-9]+/g, " ")
-    .replace(/[^a-z ]+/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\b\d+\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Longueur minimale d'un motif. Trois suffit : ce sont les frontières de mot,
+ * et non la longueur, qui empêchent une règle de capturer ses voisines —
+ * et « EDF » ou « SFR » sont de vraies enseignes.
+ */
+const MOTIF_MIN = 3;
+
+/**
+ * `aiguille` apparaît-elle dans `foin` en mots entiers ?
+ * Un simple test de sous-chaîne faisait qu'une règle apprise sur « auto »
+ * capturait « autoroute », « automobile » et « autogrill ».
+ */
+function contientMots(foin: string, aiguille: string): boolean {
+  if (aiguille.length < MOTIF_MIN || foin.length < MOTIF_MIN) return false;
+  return ` ${foin} `.includes(` ${aiguille} `);
 }
 
 /** Chaque correction de l'utilisateur crée ou renforce une règle libellé -> catégorie. */
 export function learnRule(db: DB, label: string, categoryId: number, walletId: number | null): void {
   const pattern = normalizeLabel(label);
-  if (pattern.length < 3) return;
+  if (pattern.length < MOTIF_MIN) return;
   db.prepare(
     `INSERT INTO category_rules (pattern, category_id, wallet_id) VALUES (?, ?, ?)
      ON CONFLICT(pattern) DO UPDATE SET category_id = excluded.category_id, wallet_id = excluded.wallet_id, hits = hits + 1, updated_at = datetime('now')`,
@@ -42,7 +64,7 @@ export function loadRules(db: DB) {
       const exact = exactes.get(norm);
       if (exact) return { categoryId: exact.category_id, walletId: exact.wallet_id, source: "rule" };
       for (const r of rows) {
-        if (r.pattern.length >= 3 && (norm.includes(r.pattern) || r.pattern.includes(norm))) {
+        if (contientMots(norm, r.pattern) || contientMots(r.pattern, norm)) {
           return { categoryId: r.category_id, walletId: r.wallet_id, source: "rule" };
         }
       }

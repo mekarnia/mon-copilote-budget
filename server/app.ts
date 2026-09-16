@@ -19,6 +19,7 @@ import * as projects from "./services/projects.js";
 import { homeSummary } from "./services/home.js";
 import { exportCsv, exportJson, importJson } from "./services/backup.js";
 import { versionInfo } from "./services/version.js";
+import { aiUsageSummary } from "./services/aiUsage.js";
 import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
@@ -340,6 +341,9 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
 
   /** Quelle version tourne réellement : indispensable pour déboguer à distance. */
   api.get("/version", (c) => c.json(versionInfo(path.resolve(import.meta.dirname, ".."))));
+
+  /** Ce que l'IA a réellement coûté ce mois-ci, mesuré et non estimé. */
+  api.get("/ai/usage", (c) => c.json(aiUsageSummary(db, c.req.query("month") || currentMonth())));
 
   api.get("/ai/test", async (c) => {
     try {

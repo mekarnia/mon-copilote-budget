@@ -4,6 +4,7 @@ import { isoWeek, todayIso } from "../../shared/dates.js";
 import { AiNotConfigured, CHAT_MODEL, FAST_MODEL, MODEL, getClient } from "./ai.js";
 import { computeInsights } from "./insights.js";
 import { financialBriefing } from "./briefing.js";
+import { mesurer } from "./aiUsage.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
 import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey } from "./periods.js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -60,7 +61,7 @@ export function templateMessage(insights: Insight[]): string {
 
 async function aiMessage(db: DB, insights: Insight[]): Promise<string> {
   const client = getClient(db);
-  const response = await client.messages.create({
+  const response = await mesurer(db, "Conseil de la semaine", () => client.messages.create({
     model: MODEL,
     max_tokens: 16000,
     output_config: { effort: "low" },
@@ -71,7 +72,7 @@ async function aiMessage(db: DB, insights: Insight[]): Promise<string> {
         content: `Voici les constats de la semaine, déjà calculés (ne pas en inventer d'autres) :\n${JSON.stringify(insights, null, 1)}\n\nÉcris le conseil de la semaine en 3 phrases maximum, en français : un constat principal, une action simple, un encouragement. Pas de titre, pas de liste, pas d'emoji. Si la liste est vide, dis que la semaine est calme.`,
       },
     ],
-  });
+  }));
   if (response.stop_reason === "refusal") throw new Error("Réponse IA indisponible");
   if (response.stop_reason === "max_tokens") throw new Error("Réponse IA coupée avant la fin");
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim();
@@ -139,12 +140,12 @@ async function refreshMemory(db: DB): Promise<void> {
   const fresh = db.prepare("SELECT * FROM chat_messages WHERE id > ? AND id <= ? ORDER BY id").all(memory.upTo, cutoff) as unknown as MsgRow[];
   if (fresh.length < MEMORY_EVERY) return;
   const client = getClient(db);
-  const response = await client.messages.create({
+  const response = await mesurer(db, "Mémoire du coach", () => client.messages.create({
     model: MEMO_MODEL,
     max_tokens: 1000,
     system: `Tu tiens la mémoire d'un coach budget familial. Condense en ${MEMORY_MAX} caractères maximum, en français, sans titre ni liste : les objectifs annoncés par la famille, les décisions prises, les contraintes et préférences durables, les sujets déjà traités. Garde les chiffres seulement s'ils restent vrais dans le temps (un objectif, un loyer), jamais un solde du moment. Supprime tout le reste.`,
     messages: [{ role: "user", content: `Mémoire actuelle :\n${memory.text || "(vide)"}\n\nNouveaux échanges à intégrer :\n${fresh.map((m) => `${m.role === "user" ? "Q" : "R"}: ${m.content}`).join("\n")}` }],
-  });
+  }));
   const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("").trim().slice(0, MEMORY_MAX);
   if (!text) return;
   db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
@@ -174,12 +175,12 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
   // mieux vaut une réponse plus chère qu'un coach en panne.
   let response;
   try {
-    response = await client.messages.create({ model: CHAT_MODEL, ...requete });
+    response = await mesurer(db, "Chat du coach", () => client.messages.create({ model: CHAT_MODEL, ...requete }));
   } catch (e) {
     const statut = (e as { status?: number }).status;
     if (statut !== 403 && statut !== 404) throw e;
     console.warn(`Modèle ${CHAT_MODEL} inaccessible (${statut}) : le chat passe sur ${MODEL}.`);
-    response = await client.messages.create({ model: MODEL, ...requete });
+    response = await mesurer(db, "Chat du coach", () => client.messages.create({ model: MODEL, ...requete }));
   }
   if (response.stop_reason === "refusal") throw new Error("Je ne peux pas répondre à cette question.");
   if (response.stop_reason === "max_tokens") throw new Error("La réponse a été coupée avant la fin. Reformulez plus court.");
@@ -204,13 +205,13 @@ export async function suggestedBudgets(db: DB, month: string): Promise<{ items: 
   if (base.length === 0) return { items: base, generatedBy: "template" };
   try {
     const client = getClient(db);
-    const response = await client.messages.parse({
+    const response = await mesurer(db, "Budgets suggérés", () => client.messages.parse({
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: "low", format: zodOutputFormat(budgetSchema) },
       system: `${TONE}\nTu proposes les budgets mensuels d'une famille pour le mois ${month}, catégorie par catégorie, à partir des dépenses réelles. Reste proche des montants calculés (écart maximal 20 %), arrondis à la centaine de dinars, et justifie chaque montant en une phrase courte qui cite un chiffre. Ne crée pas de catégorie.`,
       messages: [{ role: "user", content: JSON.stringify(base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_da: b.previousBudget / 100, last_month_spent_da: b.lastSpent / 100, average_3_months_da: b.average3 / 100, saved_last_month_da: b.saved / 100, computed_suggestion_da: b.suggested / 100 }))) }],
-    });
+    }));
     const parsed = response.parsed_output;
     if (!parsed) return { items: base, generatedBy: "template" };
     const byId = new Map(parsed.items.map((i) => [i.category_id, i]));
@@ -245,10 +246,11 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
     const c = JSON.parse(cached.value) as { date: string; total: number; goal: AvoidableGoal };
     if (c.date === today && c.total === stats.total) return c.goal;
   }
-  let goal: AvoidableGoal = stats.goal;
+  const calcule: AvoidableGoal = stats.goal;
+  let goal: AvoidableGoal = calcule;
   try {
     const client = getClient(db);
-    const response = await client.messages.parse({
+    const response = await mesurer(db, "Objectif du coach", () => client.messages.parse({
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: "low", format: zodOutputFormat(goalSchema) },
@@ -257,19 +259,19 @@ export async function avoidableAiGoal(db: DB, period: PeriodKey, today = todayIs
         role: "user",
         content: JSON.stringify({
           period, total_da: stats.total / 100, previous_total_da: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
-          computed_target_da: stats.goal.target / 100, project: stats.goal.projectName,
+          computed_target_da: calcule.target / 100, project: calcule.projectName,
           by_category: stats.byCategory.map((c) => ({ name: c.name, total_da: c.total / 100, share: Math.round(c.share * 100) })),
           frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_da: l.total / 100, category: l.categoryName })),
         }),
       }],
-    }, { timeout: 60_000, maxRetries: 0 });
+    }, { timeout: 60_000, maxRetries: 0 }));
     const p = response.parsed_output;
     if (p && p.target_da > 0) {
       const cents = Math.round(p.target_da * 100);
       const bounded = Math.min(Math.round(stats.total * 0.95), Math.max(Math.round(stats.total * 0.5), cents));
       const target = Math.floor(bounded / 10000) * 10000;
       if (target > 0 && target < stats.total) {
-        goal = { target, saving: stats.total - target, projectName: stats.goal.projectName, reason: p.reason.trim() || stats.goal.reason, actions: p.actions.map((a) => a.trim()).filter(Boolean).slice(0, 3), generatedBy: "ai" };
+        goal = { target, saving: stats.total - target, projectName: calcule.projectName, reason: p.reason.trim() || calcule.reason, actions: p.actions.map((a) => a.trim()).filter(Boolean).slice(0, 3), generatedBy: "ai" };
       }
     }
   } catch {

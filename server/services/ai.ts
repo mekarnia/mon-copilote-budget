@@ -8,6 +8,7 @@ import type { Category, TransactionDraft, Wallet } from "../../shared/types.js";
 import { todayIso } from "../../shared/dates.js";
 import { listCategories } from "./categories.js";
 import { listWallets } from "./wallets.js";
+import { mesurer } from "./aiUsage.js";
 
 // Opus 5 réfléchit par défaut, et ses jetons de réflexion sont décomptés de max_tokens :
 // une limite basse laisse le modèle épuiser son budget en réflexion et ne rien répondre.
@@ -127,7 +128,7 @@ function toDraft(p: z.infer<typeof draftSchema>, source: TransactionDraft["sourc
 /** Photo de ticket -> brouillon d'transaction. */
 export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jpeg" | "image/png" | "image/webp", today = todayIso()): Promise<TransactionDraft> {
   const client = getClient(db);
-  const response = await client.messages.parse({
+  const response = await mesurer(db, "Photo de ticket", () => client.messages.parse({
     model: MODEL,
     max_tokens: 16000,
     system: system(db, today),
@@ -141,7 +142,7 @@ export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jp
       },
     ],
     output_config: { format: zodOutputFormat(draftSchema) },
-  });
+  }));
   if (response.stop_reason === "max_tokens") throw new Error("La réponse de l'IA a été coupée avant la fin. Réessayez.");
   if (!response.parsed_output) throw new Error("Lecture du ticket impossible, réessayez avec une photo plus nette.");
   return toDraft(response.parsed_output, "photo");
@@ -150,13 +151,13 @@ export async function extractReceipt(db: DB, image: Buffer, mediaType: "image/jp
 /** Phrase dictée -> brouillon d'transaction. */
 export async function parseSpeech(db: DB, text: string, today = todayIso()): Promise<TransactionDraft> {
   const client = getClient(db);
-  const response = await client.messages.parse({
+  const response = await mesurer(db, "Dictée", () => client.messages.parse({
     model: MODEL,
     max_tokens: 16000,
     system: system(db, today),
     messages: [{ role: "user", content: `Phrase dictée : « ${text} »` }],
     output_config: { format: zodOutputFormat(draftSchema) },
-  });
+  }));
   if (response.stop_reason === "max_tokens") throw new Error("La réponse de l'IA a été coupée avant la fin. Réessayez.");
   if (!response.parsed_output) throw new Error("Je n'ai pas compris, reformulez en indiquant le montant.");
   return toDraft(response.parsed_output, "voice");
@@ -224,12 +225,12 @@ const categorySchema = z.object({ category_id: z.number().int().nullable() });
 /** Catégorie proposée par l'IA pour un libellé, quand aucune règle ne correspond. */
 export async function suggestCategory(db: DB, label: string): Promise<number | null> {
   const client = getClient(db);
-  const response = await client.messages.parse({
+  const response = await mesurer(db, "Catégorisation", () => client.messages.parse({
     model: FAST_MODEL,
     max_tokens: 1000,
     output_config: { format: zodOutputFormat(categorySchema) },
     system: `Tu classes un libellé d'transaction bancaire française dans une catégorie de budget. Réponds par l'identifiant de la sous-catégorie la plus probable, ou null si vraiment impossible.\n${catalogue(listCategories(db), [])}`,
     messages: [{ role: "user", content: `Libellé : « ${label} »` }],
-  });
+  }));
   return response.parsed_output?.category_id ?? null;
 }
