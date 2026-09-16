@@ -185,7 +185,7 @@ function CumulativeCurve({ points, previous }: { points: Point[]; previous: Poin
         {points.length > 1 && <path d={`${path(points)} L${x(points.length - 1).toFixed(1)} ${y(0)} L0 ${y(0)} Z`} className="fill-[#2a78d6] dark:fill-[#3987e5]" opacity={0.08} />}
         {previous.length > 1 && <path d={path(previous)} fill="none" className="stroke-slate-400" strokeWidth={2} strokeDasharray="4 4" strokeLinecap="round" />}
         {points.length > 1 && <path d={path(points)} fill="none" className="stroke-[#2a78d6] dark:stroke-[#3987e5]" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />}
-        {points.map((p, i) => (
+        {points.map((_, i) => (
           <rect key={i} x={x(i) - W / n / 2} y={0} width={W / n} height={H - padB} fill="transparent" onMouseEnter={() => setHover(i)} onTouchStart={() => setHover(i)} onClick={() => setHover(i)} />
         ))}
         {points.length > 0 && <circle cx={x(sel ? hover! : points.length - 1)} cy={y((sel ?? points[points.length - 1]).cumulative)} r={5} className="fill-[#2a78d6] dark:fill-[#3987e5]" stroke="white" strokeWidth={2} />}

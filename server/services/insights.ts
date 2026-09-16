@@ -13,7 +13,7 @@ import { monthTotals } from "./home.js";
 export function computeInsights(db: DB, today = todayIso()): Insight[] {
   const out: Insight[] = [];
   const month = currentMonth(new Date(today + "T12:00:00"));
-  const { start, end } = monthBounds(month);
+  const { end } = monthBounds(month);
   const dayOfMonth = Number(today.slice(8, 10));
   const daysInMonth = Number(end.slice(8, 10));
   const elapsed = dayOfMonth / daysInMonth;

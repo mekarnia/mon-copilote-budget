@@ -7,17 +7,17 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
  * cache hors ligne, qui garde parfois une ancienne version incompatible.
  */
 export class ErrorBoundary extends Component<{ children: ReactNode }, { erreur: Error | null }> {
-  state: { erreur: Error | null } = { erreur: null };
+  override state: { erreur: Error | null } = { erreur: null };
 
   static getDerivedStateFromError(erreur: Error) {
     return { erreur };
   }
 
-  componentDidCatch(erreur: Error, info: ErrorInfo) {
+  override componentDidCatch(erreur: Error, info: ErrorInfo) {
     console.error("Écran en erreur :", erreur, info.componentStack);
   }
 
-  render() {
+  override render() {
     if (!this.state.erreur) return this.props.children;
     return (
       <div className="mx-auto flex min-h-full max-w-lg flex-col justify-center gap-4 p-6">

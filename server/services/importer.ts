@@ -2,7 +2,7 @@ import type { DB } from "../db.js";
 import type { ImportBatch, ImportColumnMapping, ImportCommitInput, ImportPreview, ImportPreviewRow, TxType } from "../../shared/types.js";
 import { addDays } from "../../shared/dates.js";
 import { createTransaction } from "./transactions.js";
-import { loadRules, matchRule, normalizeLabel } from "./rules.js";
+import { loadRules, normalizeLabel } from "./rules.js";
 import { listCategories } from "./categories.js";
 import { matchBankCategory } from "./bankCategories.js";
 

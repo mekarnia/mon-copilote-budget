@@ -7,7 +7,7 @@ import { financialBriefing } from "./briefing.js";
 import { mesurer } from "./aiUsage.js";
 import { DONNEES_NON_FIABLES, texteSur } from "./securite.js";
 import { suggestBudgets, type BudgetSuggestion } from "./budgets.js";
-import { avoidableStats, type AvoidableGoal, type AvoidableStats, type PeriodKey } from "./periods.js";
+import { avoidableStats, type AvoidableGoal, type PeriodKey } from "./periods.js";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 

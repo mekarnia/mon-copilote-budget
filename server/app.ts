@@ -23,7 +23,7 @@ import { versionInfo } from "./services/version.js";
 import { aiUsageSummary } from "./services/aiUsage.js";
 import { Limiteur, plafondIa } from "./services/quotas.js";
 import { EXTENSION_IMAGE, typeImage } from "./services/securite.js";
-import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, migrateKeyOutOfDb, parseSpeech, PlafondIaAtteint, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
+import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, parseSpeech, PlafondIaAtteint, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
 import * as importer from "./services/importer.js";
 import * as coach from "./services/coach.js";
