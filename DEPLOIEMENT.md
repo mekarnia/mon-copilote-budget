@@ -17,6 +17,10 @@ Mise en ligne par mégarde sans mot de passe, l'application **se tait** au lieu
 d'ouvrir vos relevés. C'est l'inverse du réglage habituel, et c'est voulu : le
 défaut doit être celui qui ne perd rien.
 
+Le mot de passe se crée dans **Réglages → Sauvegarde et clé IA → Accès**, depuis
+le PC de la maison. C'est aussi là qu'il se change, et là qu'on se déconnecte
+d'un appareil.
+
 Une fois entré, la connexion dure **90 jours sur cet appareil**. Sur le
 téléphone, le mot de passe n'est retapé que quatre fois par an.
 

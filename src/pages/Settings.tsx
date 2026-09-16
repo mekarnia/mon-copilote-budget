@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Route, Routes } from "react-router-dom";
 import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
@@ -316,15 +317,7 @@ function BackupSettings() {
         <input type="file" accept="application/json" className="input" onChange={(e) => e.target.files?.[0] && onRestore(e.target.files[0])} />
         {message && <p className="text-sm">{message}</p>}
       </div>
-      <div className="card space-y-3">
-        <h2 className="font-semibold">Accès</h2>
-        <p className="text-sm text-slate-500">
-          Se déconnecter oblige à retaper le mot de passe sur cet appareil. À faire si vous prêtez votre téléphone.
-        </p>
-        <button className="btn-ghost w-full" onClick={async () => { await api.del("/api/session"); window.location.replace("/"); }}>
-          Se déconnecter de cet appareil
-        </button>
-      </div>
+      <AccesCarte />
       <div className="card space-y-1 text-xs text-slate-500">
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Version installée</p>
         <p>Code : <span className="font-mono">{version?.commit ?? "…"}</span>{version?.date && ` · ${version.date}`}</p>
@@ -435,6 +428,85 @@ function RulesSettings() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+interface EtatSession { configure: boolean; connecte: boolean; local: boolean }
+
+/**
+ * Le mot de passe se choisit ici, et nulle part ailleurs.
+ *
+ * Il n'était demandé qu'une fois créé, et rien ne permettait de le créer :
+ * l'écran de connexion restait invisible pour qui ne touche pas au serveur.
+ */
+function AccesCarte() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["session"], queryFn: () => api.get<EtatSession>("/api/session") });
+  const [ouvert, setOuvert] = useState(false);
+  const [actuel, setActuel] = useState("");
+  const [nouveau, setNouveau] = useState("");
+  const [confirme, setConfirme] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  if (!data) return null;
+
+  async function enregistrer(e: React.FormEvent) {
+    e.preventDefault();
+    setErreur(null);
+    setMessage(null);
+    if (nouveau !== confirme) return setErreur("Les deux mots de passe ne sont pas identiques.");
+    try {
+      await api.put("/api/session", { actuel, nouveau });
+      setActuel(""); setNouveau(""); setConfirme(""); setOuvert(false);
+      setMessage("Mot de passe enregistré. Il sera demandé sur vos autres appareils.");
+      void qc.invalidateQueries({ queryKey: ["session"] });
+    } catch (e) {
+      setErreur((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Accès</h2>
+      <p className="text-sm text-slate-500">
+        {data.configure
+          ? "Un mot de passe protège vos comptes. Il est demandé sur chaque appareil, puis retenu trois mois."
+          : "Aucun mot de passe. L'application s'ouvre directement à la maison, et refuse tout appel venu d'ailleurs. Pour y accéder depuis l'extérieur, il en faut un."}
+      </p>
+      {message && <p className="text-sm text-emerald-600">{message}</p>}
+
+      {!ouvert && (
+        <button className="btn-ghost w-full" onClick={() => { setOuvert(true); setMessage(null); }}>
+          {data.configure ? "Changer le mot de passe" : "Protéger par un mot de passe"}
+        </button>
+      )}
+
+      {ouvert && (
+        <form className="space-y-3" onSubmit={enregistrer}>
+          {data.configure && (
+            <input className="input" type="password" autoComplete="current-password" placeholder="Mot de passe actuel"
+              aria-label="Mot de passe actuel" value={actuel} onChange={(e) => setActuel(e.target.value)} />
+          )}
+          <input className="input" type="password" autoComplete="new-password" placeholder="Nouveau mot de passe (8 caractères minimum)"
+            aria-label="Nouveau mot de passe" value={nouveau} onChange={(e) => setNouveau(e.target.value)} />
+          <input className="input" type="password" autoComplete="new-password" placeholder="Confirmez"
+            aria-label="Confirmez le nouveau mot de passe" value={confirme} onChange={(e) => setConfirme(e.target.value)} />
+          {erreur && <p className="text-sm font-medium text-rose-600">{erreur}</p>}
+          <p className="text-xs text-slate-500">Notez-le : il n'existe aucun moyen de le retrouver.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" className="btn-ghost" onClick={() => { setOuvert(false); setErreur(null); }}>Annuler</button>
+            <button className="btn-primary" disabled={nouveau.length < 8}>Enregistrer</button>
+          </div>
+        </form>
+      )}
+
+      {data.configure && (
+        <button className="btn-ghost w-full" onClick={async () => { await api.del("/api/session"); window.location.replace("/"); }}>
+          Se déconnecter de cet appareil
+        </button>
       )}
     </div>
   );

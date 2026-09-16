@@ -193,6 +193,30 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     });
     return c.json({ ok: true });
   });
+  /** Choisir ou changer le mot de passe depuis l'application elle-même. */
+  api.put("/session", async (c) => {
+    const body = (await c.req.json()) as { actuel?: string; nouveau?: string };
+    if (motDePasseConfigure()) {
+      if (!verifierMotDePasse(String(body.actuel ?? ""))) {
+        await new Promise((r) => setTimeout(r, 1000));
+        throw new HttpError(401, "Mot de passe actuel incorrect.");
+      }
+    } else if (!venuDeLaMaison(c)) {
+      throw new HttpError(403, "Le mot de passe se choisit depuis le réseau de la maison.");
+    }
+    try {
+      definirMotDePasse(String(body.nouveau ?? ""));
+    } catch (e) {
+      throw new HttpError(400, (e as Error).message);
+    }
+    // Un nouveau mot de passe déconnecte tous les appareils : on reconnecte
+    // celui-ci, sinon on se met soi-même dehors en le changeant.
+    setCookie(c, COOKIE, creerJeton(), {
+      httpOnly: true, sameSite: "Lax", path: "/", maxAge: DUREE_COOKIE,
+      secure: new URL(c.req.url).protocol === "https:",
+    });
+    return c.json({ ok: true });
+  });
   api.delete("/session", (c) => {
     deleteCookie(c, COOKIE, { path: "/" });
     return c.json({ ok: true });
