@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { streamSSE } from "hono/streaming";
 import fs from "node:fs";
 import path from "node:path";
 import type { z } from "zod";
@@ -372,7 +373,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
 
   // Un appel IA coûte de l'argent : son débit se compte à part, bien plus serré
   // que le reste de l'API, et avant même d'atteindre le modèle.
-  for (const route of ["/ai/receipt", "/ai/parse", "/coach/chat", "/import/commit", "/categorize"]) {
+  for (const route of ["/ai/receipt", "/ai/parse", "/coach/chat", "/coach/chat/stream", "/import/commit", "/categorize"]) {
     api.use(route, async (c, next) => {
       if (c.req.method === "GET" && route !== "/categorize") return next();
       if (!debitIa.autorise(appelant(c))) {
@@ -461,6 +462,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
   api.get("/coach/insights", (c) => c.json(computeInsights(db)));
   api.get("/coach/chat", (c) => c.json(coach.listMessages(db)));
   api.delete("/coach/chat", (c) => { coach.clearMessages(db); return c.json({ ok: true }); });
+  /** Version simple, sans flux : gardée pour les tests et pour tout client qui ne lit pas le SSE. */
   api.post("/coach/chat", async (c) => {
     const { message } = parse(chatInput, await c.req.json());
     try {
@@ -468,6 +470,26 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     } catch (e) {
       return aiError(e);
     }
+  });
+  /**
+   * La même réponse, mot à mot pendant qu'elle s'écrit. L'erreur voyage dans le
+   * flux et non dans le code HTTP : à la première ligne envoyée, il est déjà parti.
+   */
+  api.post("/coach/chat/stream", async (c) => {
+    const { message } = parse(chatInput, await c.req.json());
+    return streamSSE(c, async (flux) => {
+      try {
+        const reponse = await coach.chat(db, message, {
+          onDelta: (morceau) => void flux.writeSSE({ event: "morceau", data: JSON.stringify(morceau) }),
+        });
+        await flux.writeSSE({ event: "fin", data: JSON.stringify(reponse) });
+      } catch (e) {
+        const message = e instanceof AiNotConfigured || e instanceof PlafondIaAtteint
+          ? (e as Error).message
+          : `L'IA n'a pas pu répondre : ${expliquerErreurIa(e)}.`;
+        await flux.writeSSE({ event: "erreur", data: JSON.stringify(message) });
+      }
+    });
   });
 
   app.route("/api", api);

@@ -153,7 +153,14 @@ async function refreshMemory(db: DB): Promise<void> {
     .run(MEMORY_KEY, JSON.stringify({ text, upTo: cutoff } satisfies Memory));
 }
 
-export async function chat(db: DB, userMessage: string, today = todayIso()): Promise<ChatMessage> {
+export interface ChatOptions {
+  today?: string;
+  /** Appelé à chaque morceau de texte, pour l'afficher pendant que le modèle écrit. */
+  onDelta?: (morceau: string) => void;
+}
+
+export async function chat(db: DB, userMessage: string, options: ChatOptions = {}): Promise<ChatMessage> {
+  const today = options.today ?? todayIso();
   const client = getClient(db); // lève AiNotConfigured avant d'enregistrer quoi que ce soit
   // Une question restée sans réponse laisse un message utilisateur orphelin :
   // la fenêtre pourrait alors commencer par une réponse, ce que l'API refuse.
@@ -171,17 +178,33 @@ export async function chat(db: DB, userMessage: string, today = todayIso()): Pro
     ],
     messages: [...history.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: userMessage }],
   };
+  // La réponse arrive par morceaux : trois phrases mettent plusieurs secondes à
+  // venir, et regarder un écran vide les fait paraître bien plus longues.
+  let ecrit = false;
+  const demander = (model: string) =>
+    mesurer(db, "Chat du coach", async () => {
+      const flux = client.messages.stream({ model, ...requete });
+      if (options.onDelta) {
+        flux.on("text", (morceau) => {
+          ecrit = true;
+          options.onDelta!(morceau);
+        });
+      }
+      return flux.finalMessage();
+    });
+
   // Tous les comptes n'ont pas accès aux mêmes modèles. Le chat vise le moins
   // cher, et retombe sur celui des autres fonctions si le compte ne l'a pas :
   // mieux vaut une réponse plus chère qu'un coach en panne.
   let response;
   try {
-    response = await mesurer(db, "Chat du coach", () => client.messages.create({ model: CHAT_MODEL, ...requete }));
+    response = await demander(CHAT_MODEL);
   } catch (e) {
     const statut = (e as { status?: number }).status;
-    if (statut !== 403 && statut !== 404) throw e;
+    // Un échec survenu après les premiers mots : réessayer les afficherait deux fois.
+    if ((statut !== 403 && statut !== 404) || ecrit) throw e;
     console.warn(`Modèle ${CHAT_MODEL} inaccessible (${statut}) : le chat passe sur ${MODEL}.`);
-    response = await mesurer(db, "Chat du coach", () => client.messages.create({ model: MODEL, ...requete }));
+    response = await demander(MODEL);
   }
   if (response.stop_reason === "refusal") throw new Error("Je ne peux pas répondre à cette question.");
   if (response.stop_reason === "max_tokens") throw new Error("La réponse a été coupée avant la fin. Reformulez plus court.");

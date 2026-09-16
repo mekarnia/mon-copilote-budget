@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, lireFlux } from "./api";
 import type {
   BudgetLine, Category, CategoryInput, CategorySuggestion, HomeSummary, ImportBatch, ImportColumnMapping, ImportCommitInput,
   ChatMessage, HabitSuggestion, ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft, WeeklyAdvice,
@@ -149,7 +149,30 @@ export const useDeleteRule = () => useWrite((id: number) => api.del(`/api/rules/
 export const useWeeklyAdvice = () => useQuery({ queryKey: ["weeklyAdvice"], queryFn: () => api.get<WeeklyAdvice>("/api/coach/weekly"), staleTime: 60_000 });
 export const useRefreshAdvice = () => useWrite(() => api.get<WeeklyAdvice>("/api/coach/weekly?refresh=1"), ["weeklyAdvice", "aiUsage"]);
 export const useChat = () => useQuery({ queryKey: ["chat"], queryFn: () => api.get<ChatMessage[]>("/api/coach/chat") });
-export const useSendChat = () => useWrite((message: string) => api.post<ChatMessage>("/api/coach/chat", { message }), ["chat", "aiUsage"]);
+/**
+ * Envoie la question et rend la réponse mot à mot. Renvoie le message complet
+ * une fois enregistré côté serveur, pour que la liste reprenne la main.
+ */
+export function useSendChatStream() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ message, onDelta }: { message: string; onDelta: (morceau: string) => void }) =>
+      new Promise<ChatMessage>((resoudre, rejeter) => {
+        let fini: ChatMessage | null = null;
+        lireFlux("/api/coach/chat/stream", { message }, {
+          morceau: (m) => onDelta(String(m)),
+          fin: (m) => { fini = m as ChatMessage; },
+          erreur: (m) => rejeter(new Error(String(m))),
+        })
+          .then(() => (fini ? resoudre(fini) : rejeter(new Error("La réponse s'est interrompue avant la fin."))))
+          .catch(rejeter);
+      }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["chat"] });
+      void qc.invalidateQueries({ queryKey: ["aiUsage"] });
+    },
+  });
+}
 export const useClearChat = () => useWrite(() => api.del("/api/coach/chat"), ["chat"]);
 
 // ---- Habitudes ----

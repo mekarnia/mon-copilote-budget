@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useChat, useClearChat, useSendChat, useSettings } from "@/lib/queries";
+import { useChat, useClearChat, useSendChatStream, useSettings } from "@/lib/queries";
 import { ErrorBanner, useGoBack } from "@/components/ui";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
@@ -12,23 +12,32 @@ export function CoachPage() {
   const { data: settings } = useSettings();
   // Le coach passe par l'IA : sans clé, autant le dire tout de suite plutôt qu'après la question.
   const sansCle = settings !== undefined && !settings.aiKey;
-  const send = useSendChat();
+  const send = useSendChatStream();
   const clear = useClearChat();
   const [text, setText] = useState("");
+  // La question posée et la réponse en cours d'écriture, affichées avant que le
+  // serveur ne les ait enregistrées : sinon l'écran ne bouge pas pendant l'attente.
+  const [enCours, setEnCours] = useState<{ question: string; reponse: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, send.isPending]);
+  }, [messages.length, enCours?.reponse]);
 
   async function ask(q: string) {
     const msg = q.trim();
     if (!msg) return;
     setText("");
+    setEnCours({ question: msg, reponse: "" });
     try {
-      await send.mutateAsync(msg);
+      await send.mutateAsync({
+        message: msg,
+        onDelta: (morceau) => setEnCours((e) => (e ? { ...e, reponse: e.reponse + morceau } : e)),
+      });
     } catch {
       setText(msg);
+    } finally {
+      setEnCours(null);
     }
   }
 
@@ -61,7 +70,16 @@ export function CoachPage() {
             <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${m.role === "user" ? "bg-brand text-white" : "bg-white shadow-sm dark:bg-slate-900"}`}>{m.content}</div>
           </div>
         ))}
-        {send.isPending && <div className="flex justify-start"><div className="rounded-2xl bg-white px-4 py-2 text-sm text-slate-500 shadow-sm dark:bg-slate-900">Je regarde vos chiffres…</div></div>}
+        {enCours && (
+          <>
+            <div className="flex justify-end"><div className="max-w-[85%] rounded-2xl bg-brand px-4 py-2 text-sm leading-relaxed text-white">{enCours.question}</div></div>
+            <div className="flex justify-start">
+              <div className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm leading-relaxed shadow-sm ${enCours.reponse ? "bg-white dark:bg-slate-900" : "bg-white text-slate-500 dark:bg-slate-900"}`}>
+                {enCours.reponse || "Je regarde vos chiffres…"}
+              </div>
+            </div>
+          </>
+        )}
         <ErrorBanner error={send.error} />
         <div ref={bottomRef} />
       </div>
