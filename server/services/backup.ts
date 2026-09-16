@@ -14,11 +14,22 @@ export function exportJson(db: DB): Record<string, unknown[]> {
   return out;
 }
 
-/** Restauration complète : remplace toutes les données par celles du fichier. */
+/**
+ * Restauration complète : remplace toutes les données par celles du fichier.
+ *
+ * « PRAGMA foreign_keys = OFF » était écrit ici, après le BEGIN : SQLite ignore
+ * ce réglage à l'intérieur d'une transaction, sans rien dire. La restauration
+ * vérifiait donc chaque insertion, ce qu'elle croyait justement ne pas faire —
+ * une sous-catégorie enregistrée avant sa catégorie parente faisait échouer la
+ * restauration entière. « defer_foreign_keys », lui, s'applique dans une
+ * transaction : l'ordre des lignes ne compte plus, et la cohérence est vérifiée
+ * une seule fois, sur l'état final. Une sauvegarde réellement incohérente est
+ * toujours refusée, et rien n'est perdu.
+ */
 export function importJson(db: DB, data: Record<string, unknown[]>): void {
   db.exec("BEGIN");
   try {
-    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec("PRAGMA defer_foreign_keys = ON");
     for (const t of [...TABLES].reverse()) db.exec(`DELETE FROM ${t}`);
     for (const t of TABLES) {
       const rows = (data[t] ?? []) as Record<string, unknown>[];
@@ -29,11 +40,9 @@ export function importJson(db: DB, data: Record<string, unknown[]>): void {
         db.prepare(`INSERT INTO ${t} (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`).run(...cols.map((c) => row[c] as string | number | null));
       }
     }
-    db.exec("PRAGMA foreign_keys = ON");
-    db.exec("COMMIT");
+    db.exec("COMMIT"); // c'est ici que les clés étrangères sont vérifiées
   } catch (e) {
     db.exec("ROLLBACK");
-    db.exec("PRAGMA foreign_keys = ON");
     throw e;
   }
 }
