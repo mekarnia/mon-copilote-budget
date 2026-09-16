@@ -51,15 +51,23 @@ export interface ResumeIa {
 export const useAiUsage = () => useQuery({ queryKey: ["aiUsage"], queryFn: () => api.get<ResumeIa>("/api/ai/usage") });
 export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api.get<Record<string, string>>("/api/settings") });
 
-/** Toute écriture invalide l'ensemble : les données sont petites, la simplicité prime. */
-export function useInvalidateAll() {
+/**
+ * Une écriture qui ne change que ses propres données le déclare, et seules
+ * celles-là sont rechargées. Envoyer un message au coach rechargeait l'accueil,
+ * les budgets et le suivi ; régler le plafond IA aussi. Les écritures qui
+ * touchent réellement aux montants gardent l'invalidation complète : elles
+ * changent l'accueil, les budgets, le suivi et les projets à la fois, et la
+ * liste exacte serait fausse au premier écran ajouté.
+ */
+function useWrite<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>, touche?: string[]) {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries();
-}
-
-function useWrite<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) {
-  const invalidate = useInvalidateAll();
-  return useMutation({ mutationFn: fn, onSuccess: () => invalidate() });
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      if (!touche) return void qc.invalidateQueries();
+      for (const cle of touche) void qc.invalidateQueries({ queryKey: [cle] });
+    },
+  });
 }
 
 export const useSaveTransaction = () =>
@@ -81,7 +89,7 @@ export const useAdjustWallet = () => useWrite(({ id, realBalance }: { id: number
 
 export const useSaveCategory = () =>
   useWrite(({ id, input }: { id?: number; input: CategoryInput }) => (id ? api.put<Category>(`/api/categories/${id}`, input) : api.post<Category>("/api/categories", input)));
-export const useSetAvoidable = () => useWrite(({ id, avoidable }: { id: number; avoidable: boolean }) => api.put<Category>(`/api/categories/${id}/avoidable`, { avoidable }));
+export const useSetAvoidable = () => useWrite(({ id, avoidable }: { id: number; avoidable: boolean }) => api.put<Category>(`/api/categories/${id}/avoidable`, { avoidable }), ["categories", "avoidable", "avoidableGoal"]);
 export const useDeleteCategory = () => useWrite(({ id, reassignTo }: { id: number; reassignTo: number | null }) => api.del(`/api/categories/${id}${reassignTo ? `?reassignTo=${reassignTo}` : ""}`));
 
 export const useSaveRecurrence = () =>
@@ -95,7 +103,7 @@ export const useSaveProject = () =>
 export const useDeleteProject = () => useWrite((id: number) => api.del(`/api/projects/${id}`));
 export const useContribute = () => useWrite(({ id, amount, fromWalletId }: { id: number; amount: number; fromWalletId: number }) => api.post(`/api/projects/${id}/contribute`, { amount, fromWalletId }));
 
-export const useSaveSettings = () => useWrite((body: Record<string, string>) => api.put("/api/settings", body));
+export const useSaveSettings = () => useWrite((body: Record<string, string>) => api.put("/api/settings", body), ["settings", "aiUsage"]);
 export const useRestoreBackup = () => useWrite((data: unknown) => api.post("/api/backup.json", data));
 
 // ---- MVC 2 ----
@@ -135,14 +143,14 @@ export const useImports = () => useQuery({ queryKey: ["imports"], queryFn: () =>
 export const useCancelImport = () => useWrite((id: number) => api.del<{ deleted: number }>(`/api/imports/${id}`));
 export interface Rule { id: number; pattern: string; categoryId: number; categoryName: string; hits: number }
 export const useRules = () => useQuery({ queryKey: ["rules"], queryFn: () => api.get<Rule[]>("/api/rules") });
-export const useDeleteRule = () => useWrite((id: number) => api.del(`/api/rules/${id}`));
+export const useDeleteRule = () => useWrite((id: number) => api.del(`/api/rules/${id}`), ["rules"]);
 
 // ---- MVC 3 ----
 export const useWeeklyAdvice = () => useQuery({ queryKey: ["weeklyAdvice"], queryFn: () => api.get<WeeklyAdvice>("/api/coach/weekly"), staleTime: 60_000 });
-export const useRefreshAdvice = () => useWrite(() => api.get<WeeklyAdvice>("/api/coach/weekly?refresh=1"));
+export const useRefreshAdvice = () => useWrite(() => api.get<WeeklyAdvice>("/api/coach/weekly?refresh=1"), ["weeklyAdvice", "aiUsage"]);
 export const useChat = () => useQuery({ queryKey: ["chat"], queryFn: () => api.get<ChatMessage[]>("/api/coach/chat") });
-export const useSendChat = () => useWrite((message: string) => api.post<ChatMessage>("/api/coach/chat", { message }));
-export const useClearChat = () => useWrite(() => api.del("/api/coach/chat"));
+export const useSendChat = () => useWrite((message: string) => api.post<ChatMessage>("/api/coach/chat", { message }), ["chat", "aiUsage"]);
+export const useClearChat = () => useWrite(() => api.del("/api/coach/chat"), ["chat"]);
 
 // ---- Habitudes ----
 export const useHabits = (type: TxType, categoryId: number | null, amount: number | null) =>
