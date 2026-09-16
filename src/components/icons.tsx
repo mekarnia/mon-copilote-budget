@@ -50,6 +50,9 @@ export const IconCash = svg(<><rect x="2.5" y="6" width="19" height="12" rx="2" 
 export const IconMic = svg(<><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" /><path d="M12 18v3M9 21h6" /></>);
 export const IconPen = svg(<><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z" /><path d="M14.5 6.5l3 3" /></>);
 export const IconCamera = svg(<><path d="M3.5 8.5h3.2l1.4-2.4h7.8l1.4 2.4h3.2v11h-17z" /><circle cx="12" cy="13.5" r="3.4" /></>);
+export const IconSend = svg(<><path d="M20.5 3.5 10.5 13.5" /><path d="M20.5 3.5 14 20.5l-3.5-7-7-3.5z" /></>);
+export const IconImport = svg(<><path d="M12 3.5v10" /><path d="M8 10l4 4 4-4" /><path d="M4 15v4.5h16V15" /></>);
+export const IconArchive = svg(<><rect x="3" y="4.5" width="18" height="4" rx="1.2" /><path d="M5 8.5V20h14V8.5" /><path d="M10 12.5h4" /></>);
 export const IconRobot = svg(<><path d="M12 3.5v3" /><rect x="4.5" y="6.5" width="15" height="12" rx="3" /><circle cx="9.5" cy="12.5" r="1.1" fill="currentColor" /><circle cx="14.5" cy="12.5" r="1.1" fill="currentColor" /></>);
 
 /** Teinte tenue d'un écran à l'autre : la même catégorie garde sa couleur partout. */

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useChat, useClearChat, useSendChatStream, useSettings } from "@/lib/queries";
-import { ErrorBanner, useGoBack } from "@/components/ui";
+import { Bandeau, ErrorBanner, useGoBack } from "@/components/ui";
+import { IconLeft, IconSend } from "@/components/icons";
 import { WeeklyAdvicePanel } from "@/components/CoachCard";
 
 const SUGGESTIONS = ["Combien je peux épargner ce mois-ci ?", "Quelle dépense dérive le plus ?", "Je peux me permettre 25 000 DA ?", "Où j'en serais dans un an à ce rythme ?"];
@@ -43,11 +44,19 @@ export function CoachPage() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-lg flex-col px-4 pb-4 pt-4">
-      <div className="mb-3 flex items-center justify-between">
-        <button className="btn-ghost size-11 p-0" onClick={goBack} aria-label="Retour">‹</button>
-        <h1 className="text-lg font-bold">Mon coach</h1>
-        <button className="flex h-11 items-center px-2 text-sm font-medium text-slate-500" onClick={() => { if (messages.length && confirm("Effacer la conversation ?")) clear.mutate(); }}>Effacer</button>
-      </div>
+      <Bandeau>
+        <div className="flex items-center justify-between">
+          <button className="-ml-2 flex size-11 items-center justify-center text-white/80" onClick={goBack} aria-label="Retour"><IconLeft size={22} /></button>
+          <span className="text-[17px] font-semibold">Mon coach</span>
+          <button
+            className="-mr-2 flex h-11 items-center px-2 text-sm font-medium text-white/80 disabled:opacity-40"
+            disabled={messages.length === 0}
+            onClick={() => { if (confirm("Effacer la conversation ?")) clear.mutate(); }}
+          >
+            Effacer
+          </button>
+        </div>
+      </Bandeau>
 
       <div className="flex-1 space-y-3 overflow-y-auto pb-4">
         {sansCle && (
@@ -86,7 +95,7 @@ export function CoachPage() {
 
       <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); ask(text); }}>
         <input className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder={sansCle ? "Clé IA requise" : "Votre question…"} disabled={send.isPending || sansCle} />
-        <button className="btn-primary" disabled={!text.trim() || send.isPending || sansCle}>➤</button>
+        <button className="btn-primary shrink-0 px-4" aria-label="Envoyer la question" disabled={!text.trim() || send.isPending || sansCle}><IconSend size={19} /></button>
       </form>
     </div>
   );

@@ -4,7 +4,8 @@ import {
   useAdjustWallet, useCategories, useDeleteCategory, useDeleteRecurrence, useRecurrences, useRemoveWallet, useRestoreBackup,
   useSaveCategory, useSaveRecurrence, useSaveSettings, useSaveWallet, useAiUsage, useSettings, useTestAiKey, useVersion, useWallets,
 } from "@/lib/queries";
-import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader } from "@/components/ui";
+import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader, Bandeau } from "@/components/ui";
+import { IconArchive, IconCard, IconImport, IconRight, IconRobot, IconSwap, IconTag } from "@/components/icons";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
 import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
@@ -33,23 +34,36 @@ function Back({ title }: { title: string }) {
 }
 
 function SettingsHome() {
+  const { data: wallets = [] } = useWallets();
+  // Les mêmes icônes au trait que partout ailleurs : les emoji ne se colorent
+  // pas, ne s'alignent pas entre eux et changent de dessin selon le téléphone.
   const items = [
-    { to: "portefeuilles", icon: "👛", label: "Portefeuilles", hint: "Soldes, correction du solde" },
-    { to: "categories", icon: "🏷️", label: "Catégories", hint: "Ajouter, renommer, supprimer" },
-    { to: "recurrences", icon: "🔁", label: "Récurrences", hint: "Loyer, salaire, cantine…" },
-    { to: "import", icon: "📥", label: "Importer un relevé", hint: "Fichier CSV de la banque" },
-    { to: "regles", icon: "🧠", label: "Règles apprises", hint: "Libellé → catégorie" },
-    { to: "sauvegarde", icon: "💾", label: "Sauvegarde et clé IA", hint: "Export, restauration, réglages IA" },
+    { to: "portefeuilles", Icon: IconCard, label: "Portefeuilles", hint: "Soldes, correction du solde" },
+    { to: "categories", Icon: IconTag, label: "Catégories", hint: "Ajouter, renommer, supprimer" },
+    { to: "recurrences", Icon: IconSwap, label: "Récurrences", hint: "Loyer, salaire, cantine…" },
+    { to: "import", Icon: IconImport, label: "Importer un relevé", hint: "Fichier CSV de la banque" },
+    { to: "regles", Icon: IconRobot, label: "Règles apprises", hint: "Libellé → catégorie" },
+    { to: "sauvegarde", Icon: IconArchive, label: "Sauvegarde et clé IA", hint: "Export, restauration, réglages IA" },
   ];
+  const total = wallets.reduce((s, w) => s + w.balance, 0);
   return (
     <div className="space-y-4">
-      <PageHeader title="Réglages" />
+      <Bandeau>
+        <p className="text-[17px] font-semibold">Réglages</p>
+        <div className="flex items-end justify-between">
+          <div>
+            <p className="text-[12px] text-white/75">Total de vos portefeuilles</p>
+            <p className="text-[30px] font-bold tabular-nums"><Money cents={total} short /></p>
+          </div>
+          <p className="pb-1 text-[12px] text-white/75">{wallets.length} portefeuille{wallets.length > 1 ? "s" : ""}</p>
+        </div>
+      </Bandeau>
       <div className="card divide-y divide-slate-100 p-0 dark:divide-slate-800">
         {items.map((i) => (
-          <Link key={i.to} to={i.to} className="flex items-center gap-3 px-4 py-4">
-            <span className="text-2xl">{i.icon}</span>
-            <div className="flex-1"><p className="font-medium">{i.label}</p><p className="text-sm text-slate-500">{i.hint}</p></div>
-            <span className="text-slate-400">›</span>
+          <Link key={i.to} to={i.to} className="flex h-[62px] items-center gap-3 px-4">
+            <span className="flex size-[38px] shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand"><i.Icon size={19} /></span>
+            <div className="min-w-0 flex-1"><p className="text-[15px] font-semibold">{i.label}</p><p className="truncate text-[12px] text-slate-500">{i.hint}</p></div>
+            <IconRight size={18} className="shrink-0 text-slate-400" />
           </Link>
         ))}
       </div>
