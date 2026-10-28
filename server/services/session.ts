@@ -46,12 +46,23 @@ function motDePasseEnvironnement(): string {
   return (process.env.BUDGET_MOT_DE_PASSE ?? "").trim();
 }
 
+/** Le mot de passe est-il fourni par l'hébergeur ? Il ne se change alors que là-bas. */
+export function motDePasseDeLEnvironnement(): boolean {
+  return motDePasseEnvironnement() !== "";
+}
+
+export const MDP_ENVIRONNEMENT =
+  "Le mot de passe est fourni par l'hébergeur (BUDGET_MOT_DE_PASSE) : il se change là-bas, par exemple avec « fly secrets set BUDGET_MOT_DE_PASSE=… ».";
+
 export function motDePasseConfigure(): boolean {
   return motDePasseEnvironnement() !== "" || lire() !== null;
 }
 
 export function definirMotDePasse(mdp: string): void {
   if (!fichierAcces) throw new Error("Emplacement du mot de passe non configuré.");
+  // Écrire le fichier ne servirait à rien : l'environnement l'emporte à la
+  // vérification. Dire « enregistré » laisserait l'ancien mot de passe ouvrir.
+  if (motDePasseDeLEnvironnement()) throw new Error(MDP_ENVIRONNEMENT);
   if (mdp.trim().length < 8) throw new Error("Le mot de passe doit faire au moins 8 caractères.");
   const sel = crypto.randomBytes(SEL_OCTETS).toString("hex");
   const acces: Acces = {
@@ -106,6 +117,21 @@ export function jetonValide(jeton: string | undefined, maintenant = Date.now()):
   if (!/^\d+$/.test(expire) || Number(expire) < maintenant) return false;
   const attendue = crypto.createHmac("sha256", secret).update(expire).digest("hex");
   return memeSecret(signature, attendue);
+}
+
+/**
+ * Le cookie doit-il porter « Secure » ?
+ *
+ * Derrière un relais (Fly), le HTTPS s'arrête au relais : la requête arrive ici
+ * en HTTP et son URL dit « http: ». C'est l'en-tête posé par le relais qui dit
+ * ce que le navigateur a vraiment utilisé. Sans « Secure », le jeton part en
+ * clair sur la première requête http:// que n'importe qui peut provoquer.
+ */
+export function cookieSecurise(protocole: string, derriereRelais: boolean, protoRelais?: string): boolean {
+  if (protocole === "https:") return true;
+  if (!derriereRelais) return false;
+  const dernier = (protoRelais ?? "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean).pop();
+  return dernier === "https";
 }
 
 /** Durée du cookie, en secondes. */

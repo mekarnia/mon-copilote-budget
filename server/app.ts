@@ -24,7 +24,7 @@ import { exportCsv, exportJson, importJson } from "./services/backup.js";
 import { versionInfo } from "./services/version.js";
 import { aiUsageSummary } from "./services/aiUsage.js";
 import { Limiteur, plafondIa } from "./services/quotas.js";
-import { adressePrivee, COOKIE, creerJeton, definirMotDePasse, DUREE_COOKIE, jetonValide, motDePasseConfigure, verifierMotDePasse } from "./services/session.js";
+import { adressePrivee, COOKIE, cookieSecurise, creerJeton, definirMotDePasse, DUREE_COOKIE, jetonValide, MDP_ENVIRONNEMENT, motDePasseConfigure, motDePasseDeLEnvironnement, verifierMotDePasse } from "./services/session.js";
 import { EXTENSION_IMAGE, typeImage } from "./services/securite.js";
 import { AiNotConfigured, CLE_VALIDE, expliquerErreurIa, extractReceipt, hasKey, parseSpeech, PlafondIaAtteint, readKey, suggestCategory, testKey, writeKey } from "./services/ai.js";
 import { deleteRule, listRules, matchRule } from "./services/rules.js";
@@ -171,6 +171,8 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     configure: motDePasseConfigure(),
     connecte: jetonValide(getCookie(c, COOKIE)),
     local: venuDeLaMaison(c),
+    // Fourni par l'hébergeur : il ne se change pas depuis l'écran.
+    modifiable: !motDePasseDeLEnvironnement(),
   }));
   api.post("/session", async (c) => {
     const body = (await c.req.json()) as { motDePasse?: string; nouveau?: string };
@@ -189,13 +191,14 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     }
     setCookie(c, COOKIE, creerJeton(), {
       httpOnly: true, sameSite: "Lax", path: "/", maxAge: DUREE_COOKIE,
-      secure: new URL(c.req.url).protocol === "https:",
+      secure: cookieSecurise(new URL(c.req.url).protocol, DERRIERE_RELAIS, c.req.header("x-forwarded-proto")),
     });
     return c.json({ ok: true });
   });
   /** Choisir ou changer le mot de passe depuis l'application elle-même. */
   api.put("/session", async (c) => {
     const body = (await c.req.json()) as { actuel?: string; nouveau?: string };
+    if (motDePasseDeLEnvironnement()) throw new HttpError(409, MDP_ENVIRONNEMENT);
     if (motDePasseConfigure()) {
       if (!verifierMotDePasse(String(body.actuel ?? ""))) {
         await new Promise((r) => setTimeout(r, 1000));
@@ -213,7 +216,7 @@ export function createApp({ db, uploadsDir, distDir }: AppOptions) {
     // celui-ci, sinon on se met soi-même dehors en le changeant.
     setCookie(c, COOKIE, creerJeton(), {
       httpOnly: true, sameSite: "Lax", path: "/", maxAge: DUREE_COOKIE,
-      secure: new URL(c.req.url).protocol === "https:",
+      secure: cookieSecurise(new URL(c.req.url).protocol, DERRIERE_RELAIS, c.req.header("x-forwarded-proto")),
     });
     return c.json({ ok: true });
   });

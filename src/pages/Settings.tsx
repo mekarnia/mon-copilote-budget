@@ -433,7 +433,7 @@ function RulesSettings() {
   );
 }
 
-interface EtatSession { configure: boolean; connecte: boolean; local: boolean }
+interface EtatSession { configure: boolean; connecte: boolean; local: boolean; modifiable?: boolean }
 
 /**
  * Le mot de passe se choisit ici, et nulle part ailleurs.
@@ -478,7 +478,14 @@ function AccesCarte() {
       </p>
       {message && <p className="text-sm text-emerald-600">{message}</p>}
 
-      {!ouvert && (
+      {data.modifiable === false && (
+        <p className="text-xs text-slate-500">
+          Ce mot de passe est fourni par l'hébergeur. Pour le changer : <code>fly secrets set BUDGET_MOT_DE_PASSE="…"</code>.
+          Tous les appareils seront alors déconnectés.
+        </p>
+      )}
+
+      {!ouvert && data.modifiable !== false && (
         <button className="btn-ghost w-full" onClick={() => { setOuvert(true); setMessage(null); }}>
           {data.configure ? "Changer le mot de passe" : "Protéger par un mot de passe"}
         </button>

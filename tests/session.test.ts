@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  adressePrivee, creerJeton, definirMotDePasse, jetonValide, motDePasseConfigure, setSessionFile, verifierMotDePasse,
+  adressePrivee, cookieSecurise, creerJeton, definirMotDePasse, jetonValide, motDePasseConfigure, motDePasseDeLEnvironnement,
+  setSessionFile, verifierMotDePasse,
 } from "../server/services/session.js";
 
 let dossier = "";
@@ -105,5 +106,44 @@ describe("réseau de la maison", () => {
     for (const ip of ["8.8.8.8", "172.32.0.1", "192.169.1.1", "1.2.3.4", undefined]) {
       expect(adressePrivee(ip), String(ip)).toBe(false);
     }
+  });
+});
+
+describe("mot de passe fourni par l'hébergeur", () => {
+  it("refuse d'être « changé » dans un fichier que personne ne lira", () => {
+    process.env.BUDGET_MOT_DE_PASSE = "phrase du serveur";
+    const jeton = creerJeton();
+    expect(motDePasseDeLEnvironnement()).toBe(true);
+    expect(() => definirMotDePasse("une nouvelle phrase")).toThrow(/hébergeur/);
+    // Rien n'a bougé, et surtout rien ne prétend avoir bougé.
+    expect(fs.existsSync(path.join(dossier, "acces.json"))).toBe(false);
+    expect(verifierMotDePasse("phrase du serveur")).toBe(true);
+    expect(jetonValide(jeton)).toBe(true);
+  });
+
+  it("reste modifiable depuis l'écran quand il vient du fichier", () => {
+    expect(motDePasseDeLEnvironnement()).toBe(false);
+    definirMotDePasse("le loyer de janvier");
+    expect(verifierMotDePasse("le loyer de janvier")).toBe(true);
+  });
+});
+
+describe("attribut Secure du cookie", () => {
+  it("est posé derrière le relais de Fly, qui reçoit le HTTPS et transmet en HTTP", () => {
+    expect(cookieSecurise("http:", true, "https")).toBe(true);
+  });
+
+  it("croit la valeur ajoutée par le relais, pas celle écrite par le client", () => {
+    expect(cookieSecurise("http:", true, "http, https")).toBe(true);
+    expect(cookieSecurise("http:", true, "https, http")).toBe(false);
+  });
+
+  it("n'est pas posé à la maison en HTTP, sinon le navigateur jetterait le cookie", () => {
+    expect(cookieSecurise("http:", false, "https")).toBe(false);
+    expect(cookieSecurise("http:", true, undefined)).toBe(false);
+  });
+
+  it("est posé dès que la connexion elle-même est en HTTPS", () => {
+    expect(cookieSecurise("https:", false)).toBe(true);
   });
 });
