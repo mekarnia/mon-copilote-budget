@@ -50,6 +50,9 @@ export interface ResumeIa {
 }
 export const useAiUsage = () => useQuery({ queryKey: ["aiUsage"], queryFn: () => api.get<ResumeIa>("/api/ai/usage") });
 export const useSettings = () => useQuery({ queryKey: ["settings"], queryFn: () => api.get<Record<string, string>>("/api/settings") });
+/** Les réglages du foyer sans l'état de la clé IA : pas d'appel au serveur IA à l'ouverture d'un formulaire. */
+export const useReglagesFoyer = () =>
+  useQuery({ queryKey: ["settings", "foyer"], queryFn: () => api.get<Record<string, string>>("/api/settings?sansCle=1"), staleTime: 60_000 });
 
 /**
  * Une écriture qui ne change que ses propres données le déclare, et seules

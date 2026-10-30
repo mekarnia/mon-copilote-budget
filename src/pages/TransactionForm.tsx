@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   categorize, useCategories, useConfirmTransaction, useDeleteTransaction, useExtractReceipt, useHabits, useLabels, useParseSpeech,
-  useRemovePhoto, useSaveTransaction, useTransaction, useTransactionContext, useUploadPhoto, useWallets,
+  useReglagesFoyer, useRemovePhoto, useSaveTransaction, useTransaction, useTransactionContext, useUploadPhoto, useWallets,
 } from "@/lib/queries";
 import { Link } from "react-router-dom";
 import { monthLabel } from "@shared/dates";
 import { dicteeDisponible, ecouter, SILENCE_MS, type Ecoute } from "@/lib/speech";
+import { paiementParDefaut, portefeuillePour } from "@shared/dictee";
 import { MoneyInput, Field, ErrorBanner, useGoBack, Bandeau } from "@/components/ui";
 import { IconCamera, IconCard, IconCash, IconLeft, IconMic, IconPen } from "@/components/icons";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -47,7 +48,9 @@ export function TransactionFormPage() {
   const [amount, setAmount] = useState<number | null>(null);
   const [date, setDate] = useState(todayIso());
   const [time, setTime] = useState(nowTime());
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>("card");
+  const { data: reglages } = useReglagesFoyer();
+  const paiementDefaut = paiementParDefaut(reglages?.paiementParDefaut);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [walletId, setWalletId] = useState<number | null>(null);
   const [toWalletId, setToWalletId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
@@ -73,9 +76,22 @@ export function TransactionFormPage() {
   const speechAvailable = dicteeDisponible();
   const [erreurMicro, setErreurMicro] = useState<string | null>(null);
 
+  // Nouvelle dépense : espèces et portefeuille Espèces par défaut (réglage du foyer), sauf si on choisit autre chose.
+  const defautApplique = useRef(false);
   useEffect(() => {
-    if (walletId === null && wallets.length) setWalletId(wallets[0].id);
-  }, [wallets, walletId]);
+    if (editId || defautApplique.current || !wallets.length || reglages === undefined) {
+      if (editId && walletId === null && wallets.length) setWalletId(wallets[0].id);
+      return;
+    }
+    defautApplique.current = true;
+    if (paiementDefaut) {
+      setPaymentMethod(paiementDefaut);
+      setWalletId(portefeuillePour(paiementDefaut, wallets) ?? wallets[0].id);
+    } else if (walletId === null) {
+      setWalletId(wallets[0].id);
+    }
+  }, [wallets, walletId, reglages, paiementDefaut, editId]);
+
 
   useEffect(() => {
     if (!existing) return;

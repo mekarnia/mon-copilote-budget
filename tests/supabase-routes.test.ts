@@ -508,7 +508,11 @@ describe.skipIf(!actif)("étape 3 : IA et coach par la fonction serveur", async 
     faux.appels = [];
     // Une phrase complète se lit sur place, sans appel à l'IA.
     const vite = await post("/api/ai/parse", { text: "1200 dinars de courses chez Ardis hier" });
-    expect(vite).toMatchObject({ amount: 120000, categoryId: ids["Supermarché"], label: "Ardis", source: "voice" });
+    expect(vite).toMatchObject({ amount: 120000, categoryId: ids["Supermarché"], label: "Ardis", source: "voice", paymentMethod: "cash", walletId: ids["Espèces"] });
+    expect(await post("/api/ai/parse", { text: "800 DA coiffeur par carte" })).toMatchObject({ paymentMethod: "card", walletId: ids["Compte courant"] });
+    await put("/api/settings", { paiementParDefaut: "aucun" });
+    expect((await post("/api/ai/parse", { text: "500 dinars de pain à la boulangerie" })).paymentMethod).toBeNull();
+    await put("/api/settings", { paiementParDefaut: "cash" });
     expect(faux.appels).toHaveLength(0);
     // Il manque la catégorie : le modèle rapide complète.
     const d = await post("/api/ai/parse", { text: "un machin à 45 dinars en liquide" });

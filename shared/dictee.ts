@@ -15,6 +15,8 @@ export interface ContexteDictee {
   wallets: Pick<Wallet, "id" | "name" | "type">[];
   /** Règles apprises : libellé -> catégorie. */
   regle?: (libelle: string) => { categoryId: number | null; walletId: number | null } | null;
+  /** Moyen de paiement d'une dépense quand la phrase n'en dit rien (réglage du foyer). */
+  paiementParDefaut?: PaymentMethod | null;
 }
 
 export interface LectureDictee {
@@ -141,6 +143,23 @@ function categorieNommee(n: string, categories: Category[], type: TxType): numbe
   return candidates[0]?.c.id ?? null;
 }
 
+/** Réglage du foyer : espèces par défaut, carte, ou rien (« aucun »). */
+export function paiementParDefaut(valeur: string | null | undefined): PaymentMethod | null {
+  if (valeur === "card") return "card";
+  if (valeur === "aucun") return null;
+  return "cash";
+}
+
+/** Espèces -> portefeuille de type espèces ; carte -> compte courant. */
+export function portefeuillePour(m: PaymentMethod, wallets: Pick<Wallet, "id" | "type">[]): number | null {
+  return wallets.find((w) => (m === "cash" ? w.type === "especes" : w.type === "courant"))?.id ?? null;
+}
+
+/** Le moyen de paiement que la phrase nomme explicitement, ou null. */
+export function paiementDit(texte: string): PaymentMethod | null {
+  return trouverPaiement(normalizeCategoryLabel(texte));
+}
+
 export function lireDictee(texte: string, today: string, ctx: ContexteDictee): LectureDictee {
   const t = texte.trim();
   const n = normalizeCategoryLabel(t);
@@ -155,11 +174,13 @@ export function lireDictee(texte: string, today: string, ctx: ContexteDictee): L
   const parentDe = (id: number | null) => ctx.categories.find((c) => c.id === id)?.parentId ?? null;
   const precise = nommee !== null && parMotCle !== null && parentDe(parMotCle) === nommee ? parMotCle : null;
   const categoryId = regle?.categoryId ?? precise ?? nommee ?? parMotCle;
+  // Rien de dit sur le paiement : celui du foyer par défaut (les espèces), même si une règle se souvient d'une carte.
+  const paiement = paymentMethod ?? (type === "expense" ? ctx.paiementParDefaut ?? null : null);
   let walletId = regle?.walletId ?? null;
-  if (paymentMethod) walletId = ctx.wallets.find((w) => (paymentMethod === "cash" ? w.type === "especes" : w.type === "courant"))?.id ?? walletId;
+  if (paiement) walletId = portefeuillePour(paiement, ctx.wallets) ?? walletId;
   const draft: TransactionDraft = {
     type, amount: montant?.cents ?? null, date: trouverDate(t, today), label, categoryId, walletId, toWalletId: null,
-    paymentMethod, question: null, source: "voice",
+    paymentMethod: paiement, question: null, source: "voice",
   };
   return { draft, complet: draft.amount !== null && categoryId !== null };
 }

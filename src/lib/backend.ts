@@ -33,7 +33,7 @@ import {
   type BudgetSuggestion, type DepenseCoach, type DonneesCoach,
 } from "@shared/coach";
 import { isoWeek, monthBounds } from "@shared/dates";
-import { lireDictee } from "@shared/dictee";
+import { lireDictee, paiementDit, paiementParDefaut, portefeuillePour } from "@shared/dictee";
 import { lireFluxReponse } from "./api";
 import type { z } from "zod";
 
@@ -547,12 +547,13 @@ const routes: Route[] = [
   }],
 
   // Réglages du foyer
-  ["GET", /^\/api\/settings$/, async () => {
+  ["GET", /^\/api\/settings$/, async (_p, q) => {
     const { data, error } = await supabase.from("settings").select("key, value");
     echec(error);
     const out: Record<string, string> = {};
     for (const r of data as { key: string; value: string }[]) if (r.key !== "chatMemory" && !r.key.startsWith("goal:")) out[r.key] = r.value;
     // La clé reste sur le serveur : on n'en montre que les quatre derniers caractères.
+    if (q.get("sansCle") === "1") return out;
     out.aiKey = await ia<{ cle: string }>("etat").then((e) => e.cle).catch(() => "");
     return out;
   }],
@@ -1117,26 +1118,36 @@ function routesEtape3(): Route[] {
       const octets = new Uint8Array(await fichier.arrayBuffer());
       const type = typeImage(octets);
       if (!type) throw new ApiError(400, "Ce fichier n'est pas une photo (JPEG, PNG ou WebP).");
-      return ia<TransactionDraft>("ticket", { image: enBase64(octets), media_type: type, catalogue: await catalogueIa(), today: todayIso() });
+      const d = await ia<TransactionDraft>("ticket", { image: enBase64(octets), media_type: type, catalogue: await catalogueIa(), today: todayIso() });
+      // Le ticket ne dit pas toujours comment on a payé : le réglage du foyer décide.
+      const m = d.paymentMethod ?? (d.type === "income" ? null : paiementParDefaut(await reglage("paiementParDefaut")));
+      if (!m) return d;
+      const { ws } = await referentielIa();
+      return { ...d, paymentMethod: m, walletId: portefeuillePour(m, ws) ?? d.walletId };
     }],
     ["POST", /^\/api\/ai\/parse$/, async (_p, _q, body): Promise<TransactionDraft> => {
       const texte = String((body as { text?: string })?.text ?? "").trim();
       if (!texte || texte.length > 500) throw new ApiError(400, "Phrase vide ou trop longue (500 caractères).");
       const { cats, ws, regles } = await referentielIa();
+      const parDefaut = paiementParDefaut(await reglage("paiementParDefaut"));
       // D'abord une lecture locale, instantanée : montant, catégorie, commerçant, date.
-      const local = lireDictee(texte, todayIso(), { categories: cats, wallets: ws, regle: (l) => regles.match(l) });
+      const local = lireDictee(texte, todayIso(), { categories: cats, wallets: ws, regle: (l) => regles.match(l), paiementParDefaut: parDefaut });
       if (local.complet) return local.draft;
+      // Le paiement nommé dans la phrase l'emporte ; sinon celui du foyer, pour une dépense.
+      const avecPaiement = (d: TransactionDraft): TransactionDraft => {
+        const m = paiementDit(texte) ?? (d.type === "expense" || d.type === null ? parDefaut : d.paymentMethod);
+        return m ? { ...d, paymentMethod: m, walletId: portefeuillePour(m, ws) ?? d.walletId } : d;
+      };
       // Il manque le montant ou la catégorie : l'IA (modèle rapide) complète, la lecture locale sert de filet.
       try {
         const d = await ia<TransactionDraft>("dictee", { texte, catalogue: catalogue(cats, ws), today: todayIso() });
-        return {
+        return avecPaiement({
           ...d,
           amount: d.amount ?? local.draft.amount,
           categoryId: d.categoryId ?? local.draft.categoryId,
-          paymentMethod: d.paymentMethod ?? local.draft.paymentMethod,
           walletId: d.walletId ?? local.draft.walletId,
           label: d.label || local.draft.label,
-        };
+        });
       } catch {
         const manque = local.draft.amount === null ? "Quel est le montant ?" : "Choisissez la catégorie.";
         return { ...local.draft, question: manque };

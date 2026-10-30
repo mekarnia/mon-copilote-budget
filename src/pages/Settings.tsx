@@ -9,7 +9,7 @@ import { Money, Sheet, MoneyInput, Field, ErrorBanner, Segmented, PageHeader, Ba
 import { IconArchive, IconCard, IconImport, IconRight, IconRobot, IconSwap, IconTag } from "@/components/icons";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
-import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
+import { useDeleteRule, useReglagesFoyer, useRules, useSetAvoidable } from "@/lib/queries";
 import { formatCents } from "@shared/money";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
@@ -70,7 +70,29 @@ function SettingsHome() {
           </Link>
         ))}
       </div>
+      <PaiementParDefautCarte />
       <AccesCarte />
+    </div>
+  );
+}
+
+/** Espèces, carte ou rien : ce qui est choisi d'office pour une nouvelle dépense, saisie ou dictée. */
+function PaiementParDefautCarte() {
+  const { data: reglages } = useReglagesFoyer();
+  const save = useSaveSettings();
+  if (!reglages) return null;
+  const valeur = (reglages.paiementParDefaut === "card" || reglages.paiementParDefaut === "aucun" ? reglages.paiementParDefaut : "cash") as "cash" | "card" | "aucun";
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Paiement par défaut des dépenses</h2>
+      <Segmented
+        value={valeur}
+        onChange={(v) => save.mutate({ paiementParDefaut: v })}
+        options={[{ value: "cash", label: "Espèces" }, { value: "card", label: "Carte" }, { value: "aucun", label: "Aucun" }]}
+      />
+      <p className="text-xs text-slate-500">
+        Choisi d'office pour chaque nouvelle dépense, saisie, dictée ou photo. Dire « par carte » ou « en espèces » en dictant l'emporte toujours.
+      </p>
     </div>
   );
 }

@@ -53,3 +53,24 @@ describe("lecture instantanée d'une dictée", () => {
     expect(performance.now() - debut).toBeLessThan(500);
   });
 });
+
+describe("paiement par défaut du foyer", () => {
+  const avecDefaut = (t: string) => lireDictee(t, TODAY, { categories, wallets, paiementParDefaut: "cash" }).draft;
+  it("met les dépenses en espèces quand la phrase n'en dit rien", () => {
+    const d = avecDefaut("1200 dinars de courses chez Ardis");
+    expect(d.paymentMethod).toBe("cash");
+    expect(portefeuille(d.walletId)).toBe("Espèces");
+  });
+  it("garde la carte quand on la dit, même avec les espèces par défaut", () => {
+    const d = avecDefaut("800 DA coiffeur par carte");
+    expect(d.paymentMethod).toBe("card");
+    expect(portefeuille(d.walletId)).toBe("Compte courant");
+  });
+  it("l'emporte sur le portefeuille retenu par une règle", () => {
+    const d = lireDictee("900 dinars chez Speedy", TODAY, { categories, wallets, paiementParDefaut: "cash", regle: () => ({ categoryId: categories[1].id, walletId: wallets.find((w) => w.name === "Compte courant")!.id }) }).draft;
+    expect(portefeuille(d.walletId)).toBe("Espèces");
+  });
+  it("ne touche pas aux revenus", () => {
+    expect(avecDefaut("salaire 85000 dinars").paymentMethod).toBeNull();
+  });
+});
