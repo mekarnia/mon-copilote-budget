@@ -41,9 +41,9 @@ const MODEL = "claude-opus-5";
 const CHAT_MODEL = "claude-sonnet-5";
 const FAST_MODEL = "claude-haiku-4-5";
 const MODELES = [
-  { id: MODEL, role: "Photo de ticket, dictée, conseil de la semaine, budgets" },
+  { id: MODEL, role: "Photo de ticket, conseil de la semaine, budgets" },
   { id: CHAT_MODEL, role: "Chat du coach" },
-  { id: FAST_MODEL, role: "Catégorisation à l'import, mémoire du coach" },
+  { id: FAST_MODEL, role: "Dictée, catégorisation à l'import, mémoire du coach" },
 ];
 /** Tarifs publiés, en dollars par million de jetons. */
 const TARIFS: Record<string, { entree: number; sortie: number }> = {
@@ -276,9 +276,10 @@ async function ticket(c: Contexte, b: Record<string, unknown>) {
 async function dictee(c: Contexte, b: Record<string, unknown>) {
   const texte = String(b.texte ?? "").trim();
   if (!texte || texte.length > 500) throw new Refus(400, "Phrase vide ou trop longue (500 caractères).");
+  // Une phrase à découper, pas un raisonnement : le modèle rapide répond en une à deux secondes.
   const m = await appeler(c, "Dictée", {
-    model: MODEL,
-    max_tokens: 16000,
+    model: FAST_MODEL,
+    max_tokens: 2000,
     system: consigneSaisie(borne(b.catalogue, 20_000), jour(b.today, c)),
     messages: [{ role: "user", content: `Phrase dictée : « ${texteSur(texte, 500)} »` }],
     output_config: { format: SCHEMA_BROUILLON },

@@ -6,7 +6,7 @@ import {
 } from "@/lib/queries";
 import { Link } from "react-router-dom";
 import { monthLabel } from "@shared/dates";
-import { createRecognizer, transcriptOf } from "@/lib/speech";
+import { dicteeDisponible, ecouter, SILENCE_MS, type Ecoute } from "@/lib/speech";
 import { MoneyInput, Field, ErrorBanner, useGoBack, Bandeau } from "@/components/ui";
 import { IconCamera, IconCard, IconCash, IconLeft, IconMic, IconPen } from "@/components/icons";
 import { CategoryPicker } from "@/components/CategoryPicker";
@@ -69,8 +69,9 @@ export function TransactionFormPage() {
   const [describe, setDescribe] = useState("");
   const [showDescribe, setShowDescribe] = useState(false);
   const insecure = typeof window !== "undefined" && !window.isSecureContext;
-  const recognizerRef = useRef<ReturnType<typeof createRecognizer>>(null);
-  const speechAvailable = typeof window !== "undefined" && createRecognizer() !== null;
+  const recognizerRef = useRef<Ecoute | null>(null);
+  const speechAvailable = dicteeDisponible();
+  const [erreurMicro, setErreurMicro] = useState<string | null>(null);
 
   useEffect(() => {
     if (walletId === null && wallets.length) setWalletId(wallets[0].id);
@@ -93,7 +94,7 @@ export function TransactionFormPage() {
 
   useEffect(() => {
     return () => {
-      recognizerRef.current?.abort();
+      recognizerRef.current?.annuler();
     };
   }, []);
 
@@ -128,24 +129,26 @@ export function TransactionFormPage() {
 
   function toggleListening() {
     if (listening) {
-      recognizerRef.current?.stop();
+      recognizerRef.current?.terminer();
       return;
     }
-    const r = createRecognizer();
-    if (!r) return;
-    recognizerRef.current = r;
     setTranscript("");
-    setListening(true);
-    r.onresult = (e) => setTranscript(transcriptOf(e));
-    r.onerror = () => setListening(false);
-    r.onend = () => {
-      setListening(false);
-      setTranscript((t) => {
+    setErreurMicro(null);
+    // Pendant qu'on parle, la fonction IA se réveille : elle sera prête si on a besoin d'elle.
+    void import("@/lib/backend").then((b) => b.prechaufferIa());
+    const ecoute = ecouter({
+      auFil: setTranscript,
+      fin: (t) => {
+        setListening(false);
+        recognizerRef.current = null;
+        setTranscript(t);
         if (t) parseSpeech.mutateAsync(t).then(applyDraft).catch(() => undefined);
-        return t;
-      });
-    };
-    r.start();
+      },
+      erreur: (m) => { setListening(false); setErreurMicro(m); },
+    });
+    if (!ecoute) return;
+    recognizerRef.current = ecoute;
+    setListening(true);
   }
 
   async function onLabelBlur() {
@@ -210,7 +213,7 @@ export function TransactionFormPage() {
       {!editId && (
         <div className="mb-3 grid grid-cols-3 gap-2">
           <button type="button" className={`btn h-12 px-2 py-0 text-sm ${listening ? "bg-red-600 text-white" : "btn-ghost"}`} onClick={toggleListening} disabled={!speechAvailable || insecure || busy}>
-            <IconMic size={18} />{listening ? "Stop" : "Dicter"}
+            <IconMic size={18} />{listening ? "Terminer" : "Dicter"}
           </button>
           <button type="button" className={`btn-ghost h-12 px-2 py-0 text-sm ${showDescribe ? "ring-2 ring-brand" : ""}`} onClick={() => setShowDescribe((v) => !v)} disabled={busy}><IconPen size={18} />Décrire</button>
           <button type="button" className="btn-ghost h-12 px-2 py-0 text-sm" onClick={() => receiptRef.current?.click()} disabled={busy}><IconCamera size={18} />Ticket</button>
@@ -234,7 +237,17 @@ export function TransactionFormPage() {
         <p className="mb-3 text-xs text-slate-500">Micro et appareil photo indisponibles sur une adresse en http:// : utilisez « Décrire » avec le micro du clavier, ou autorisez cette adresse dans chrome://flags (« Insecure origins treated as secure »).</p>
       )}
       {!editId && !speechAvailable && !insecure && <p className="mb-3 text-xs text-slate-500">La dictée n'est disponible que dans Chrome (Android ou ordinateur).</p>}
-      {(listening || transcript) && !busy && <p className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{transcript || "Parlez, par exemple : « 1200 dinars de courses chez Ardis hier »"}</p>}
+      {(listening || transcript) && !busy && (
+        <div className="mb-3 rounded-xl bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">
+          <p>{transcript || "Parlez, par exemple : « 1200 dinars de courses chez Ardis hier »"}</p>
+          {listening && (
+            <p className="mt-1 text-xs text-slate-500">
+              Prenez votre temps : j'écoute jusqu'à {SILENCE_MS / 1000} secondes de silence, ou touchez « Terminer ».
+            </p>
+          )}
+        </div>
+      )}
+      {erreurMicro && <p className="mb-3 text-sm font-medium text-rose-600">{erreurMicro}</p>}
       {busy && <p className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">Lecture en cours…</p>}
       {draftInfo && !busy && (
         <div className="mb-3 rounded-xl bg-brand/10 px-3 py-2 text-sm">

@@ -1,9 +1,18 @@
-/** Reconnaissance vocale native de Chrome Android. Renvoie null si le navigateur ne la propose pas. */
+/**
+ * Dictée avec la reconnaissance vocale du navigateur (Chrome, Safari récent).
+ *
+ * Laissée à elle-même, la reconnaissance s'arrête à la première hésitation :
+ * « 1200 dinars… de courses » perdait la fin. Ici, l'écoute est continue et
+ * repart toute seule si le navigateur la coupe ; elle ne se termine que sur
+ * « Terminer », ou après un vrai silence une fois que quelque chose a été dit.
+ */
+interface ResultatVocal { isFinal: boolean; 0: { transcript: string } }
 interface RecognitionLike {
   lang: string;
+  continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
-  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<ResultatVocal> }) => void) | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
   start(): void;
@@ -11,19 +20,105 @@ interface RecognitionLike {
   abort(): void;
 }
 
-export function createRecognizer(): RecognitionLike | null {
-  const w = window as unknown as { SpeechRecognition?: new () => RecognitionLike; webkitSpeechRecognition?: new () => RecognitionLike };
-  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-  if (!Ctor) return null;
-  const r = new Ctor();
-  r.lang = "fr-FR";
-  r.interimResults = true;
-  r.maxAlternatives = 1;
-  return r;
+type Constructeur = new () => RecognitionLike;
+const constructeur = (): Constructeur | null => {
+  const w = window as unknown as { SpeechRecognition?: Constructeur; webkitSpeechRecognition?: Constructeur };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+};
+
+export const dicteeDisponible = () => typeof window !== "undefined" && constructeur() !== null;
+
+/** Silence accepté entre deux morceaux de phrase, une fois qu'on a commencé à parler. */
+export const SILENCE_MS = 2500;
+/** Si rien n'est dit du tout, on n'écoute pas indéfiniment. */
+const ATTENTE_MAX_MS = 10_000;
+
+export interface Ecoute {
+  /** Termine tout de suite et rend le texte entendu. */
+  terminer(): void;
+  /** Abandonne sans rien rendre. */
+  annuler(): void;
 }
 
-export function transcriptOf(e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }): string {
-  let text = "";
-  for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-  return text.trim();
+export function ecouter(rappels: {
+  /** Le texte entendu jusqu'ici, mis à jour pendant qu'on parle. */
+  auFil: (texte: string) => void;
+  /** Le texte complet, une seule fois, à la fin. */
+  fin: (texte: string) => void;
+  erreur?: (message: string) => void;
+}): Ecoute | null {
+  const Ctor = constructeur();
+  if (!Ctor) return null;
+  let acquis = "";          // texte définitif des sessions précédentes
+  let session = "";         // texte définitif de la session en cours
+  let provisoire = "";      // ce que le moteur hésite encore à confirmer
+  let fini = false;
+  let relances = 0;
+  let minuterie: ReturnType<typeof setTimeout> | undefined;
+  let r: RecognitionLike;
+
+  const texte = () => [acquis, session, provisoire].map((s) => s.trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  const armer = (ms: number) => {
+    clearTimeout(minuterie);
+    minuterie = setTimeout(() => terminer(), ms);
+  };
+
+  function terminer() {
+    if (fini) return;
+    fini = true;
+    clearTimeout(minuterie);
+    try { r.stop(); } catch { /* déjà arrêtée */ }
+    rappels.fin(texte());
+  }
+
+  function demarrer() {
+    r = new Ctor!();
+    r.lang = "fr-FR";
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    r.onresult = (e) => {
+      let definitif = "", hesitant = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) definitif += ` ${t}`; else hesitant += ` ${t}`;
+      }
+      session = definitif;
+      provisoire = hesitant;
+      rappels.auFil(texte());
+      armer(SILENCE_MS);
+    };
+    r.onerror = (e) => {
+      // « no-speech » et « aborted » ne sont que des pauses : la session repart dans onend.
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        fini = true;
+        clearTimeout(minuterie);
+        rappels.erreur?.("Micro refusé : autorisez-le pour ce site dans les réglages du navigateur.");
+      } else if (e.error === "network") {
+        fini = true;
+        clearTimeout(minuterie);
+        rappels.erreur?.("La dictée du navigateur a besoin d'internet. Réessayez, ou utilisez « Décrire ».");
+      }
+    };
+    r.onend = () => {
+      if (fini) return;
+      // Le navigateur a coupé de lui-même : on garde ce qui est acquis et on repart.
+      acquis = [acquis, session, provisoire].join(" ").trim();
+      session = provisoire = "";
+      if (relances++ > 30) return terminer();
+      try { demarrer(); } catch { terminer(); }
+    };
+    r.start();
+  }
+
+  demarrer();
+  armer(ATTENTE_MAX_MS);
+  return {
+    terminer,
+    annuler() {
+      fini = true;
+      clearTimeout(minuterie);
+      try { r.abort(); } catch { /* déjà arrêtée */ }
+    },
+  };
 }

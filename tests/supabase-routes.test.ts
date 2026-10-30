@@ -476,7 +476,10 @@ describe.skipIf(!actif)("étape 3 : IA et coach par la fonction serveur", async 
 
   it("sans clé : tout reste utilisable, l'IA explique comment l'activer", async () => {
     expect((await get("/api/settings")).aiKey).toBe("");
-    await expect(post("/api/ai/parse", { text: "45 DA de pain" })).rejects.toThrow(/Ajoutez votre clé IA/);
+    // Sans clé, la dictée marche quand même pour ce qui se lit sur place ; le reste est demandé.
+    expect(await post("/api/ai/parse", { text: "45 DA de pain à la boulangerie" })).toMatchObject({ amount: 4500, categoryId: ids["Boulangerie"] });
+    expect(await post("/api/ai/parse", { text: "un machin à 45 dinars" })).toMatchObject({ amount: 4500, categoryId: null, question: "Choisissez la catégorie." });
+    await expect(get("/api/ai/test")).rejects.toThrow(/Ajoutez votre clé IA/);
     expect(await get("/api/categorize?label=INCONNU")).toEqual({ categoryId: null, walletId: null, source: "none" });
     expect((await get("/api/coach/weekly")).generatedBy).toBe("template");
     expect(faux.appels).toHaveLength(0);
@@ -491,19 +494,26 @@ describe.skipIf(!actif)("étape 3 : IA et coach par la fonction serveur", async 
     expect((await get("/api/settings")).aiKey).toBe("••••1234"); // la même clé pour tout le foyer
     commeUtilisateur(INCONNU);
     expect((await get("/api/settings")).aiKey).toBe("");
-    await expect(post("/api/ai/parse", { text: "45 DA de pain" })).rejects.toThrow(/Ajoutez votre clé IA/); // pas la clé d'un autre foyer
+    await expect(get("/api/ai/test")).rejects.toThrow(/Ajoutez votre clé IA/); // pas la clé d'un autre foyer
     commeUtilisateur(LUI);
   });
 
   it("teste chaque modèle, même plafond atteint", async () => {
     const r = await get("/api/ai/test");
     expect(r.essais.map((e: Json) => [e.id, e.ok])).toEqual([["claude-opus-5", true], ["claude-sonnet-5", true], ["claude-haiku-4-5", true]]);
+    expect(r.essais[2].role).toContain("Dictée");
   });
 
   it("transforme une dictée et une photo en brouillon, et note chaque appel", async () => {
     faux.appels = [];
-    const d = await post("/api/ai/parse", { text: "45 dinars 50 de courses en liquide hier" });
+    // Une phrase complète se lit sur place, sans appel à l'IA.
+    const vite = await post("/api/ai/parse", { text: "1200 dinars de courses chez Ardis hier" });
+    expect(vite).toMatchObject({ amount: 120000, categoryId: ids["Supermarché"], label: "Ardis", source: "voice" });
+    expect(faux.appels).toHaveLength(0);
+    // Il manque la catégorie : le modèle rapide complète.
+    const d = await post("/api/ai/parse", { text: "un machin à 45 dinars en liquide" });
     expect(d).toMatchObject({ type: "expense", amount: 4550, label: "Carrefour", categoryId: ids["Supermarché"], paymentMethod: "cash", source: "voice" });
+    expect(faux.appels[0].model).toBe("claude-haiku-4-5");
     expect(faux.appels[0].system).toContain(`${ids["Supermarché"]} : Supermarché`); // le catalogue arrive avec la consigne
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(30).fill(7)]);
     const f = new FormData();
@@ -577,13 +587,13 @@ describe.skipIf(!actif)("étape 3 : IA et coach par la fonction serveur", async 
 
   it("bloque l'IA au plafond du mois et au-delà de vingt demandes par minute", async () => {
     await put("/api/settings", { plafondIaUsd: "0,01" });
-    await expect(post("/api/ai/parse", { text: "pain 50 DA" })).rejects.toThrow(/Plafond IA du mois atteint/);
+    await expect(get("/api/budgets/suggest?month=" + mois).then(() => post("/api/ai/receipt", (() => { const f = new FormData(); f.append("photo", new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(30).fill(1)])])); return f; })()))).rejects.toThrow(/Plafond IA du mois atteint/);
     expect((await get("/api/ai/usage")).depasse).toBe(true);
     expect((await get("/api/ai/test")).essais).toHaveLength(3); // le diagnostic reste possible
     await put("/api/settings", { plafondIaUsd: "0" });
     psql(`insert into public.ai_calls (foyer_id, model, fonction, input_tokens, output_tokens, micro_usd, duree_ms)
           select foyer_id, 'claude-haiku-4-5', 'Essai', 1, 1, 0, 1 from public.membres, generate_series(1, 20) where user_id = '${LUI}'`);
-    await expect(post("/api/ai/parse", { text: "pain 50 DA" })).rejects.toThrow(/Trop de demandes/);
+    await expect(post("/api/ai/receipt", (() => { const f = new FormData(); f.append("photo", new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(30).fill(1)])])); return f; })())).rejects.toThrow(/Trop de demandes/);
     psql("delete from public.ai_calls where fonction = 'Essai'");
   });
 
