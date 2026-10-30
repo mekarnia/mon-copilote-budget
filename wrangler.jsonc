@@ -1,0 +1,13 @@
+// Mise en ligne sur Cloudflare Workers : l'application est un site statique
+// (dist/), Supabase fait le reste. Toute adresse inconnue renvoie index.html,
+// pour que /transactions ou /reglages s'ouvrent aussi depuis un favori.
+// Le nom doit être celui du projet créé dans le tableau de bord Cloudflare.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mon-copilote-budget",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
