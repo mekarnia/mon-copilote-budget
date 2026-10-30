@@ -13,7 +13,8 @@ import {
   budgetApplyInput, budgetCopyInput, budgetInput, bulkTransactionInput, categoryInput, contributeInput, importCommitInput, projectInput, recurrenceInput,
   transactionInput, walletInput,
   type BudgetLine, type Category, type CategorySuggestion, type HabitSuggestion, type HomeSummary, type ImportBatch, type ImportColumnMapping,
-  type ImportPreviewRow, type LabelSuggestion, type Project, type TxType,
+  type ChatMessage, type ImportPreviewRow, type Insight, type LabelSuggestion, type Project, type TransactionDraft, type TxType,
+  type UpcomingBill, type WeeklyAdvice,
   type Recurrence, type Transaction, type Wallet,
 } from "@shared/types";
 import { addDays, monthOf, nextOccurrence, shiftMonth, todayIso } from "@shared/dates";
@@ -25,8 +26,14 @@ import { normalizeLabel } from "@shared/libelle";
 import { EXTENSION_IMAGE, typeImage } from "@shared/image";
 import {
   bornesLecture, calculerEvitables, calculerPeriode, calculerStats, periodRange, PERIOD_KEYS,
-  type CategorieSuivi, type LigneJour, type PeriodKey,
+  type AvoidableGoal, type CategorieSuivi, type LigneJour, type PeriodKey,
 } from "@shared/suivi";
+import {
+  briefing, calculerConstats, catalogue, debutDonnees, suggererBudgets, templateMessage,
+  type BudgetSuggestion, type DepenseCoach, type DonneesCoach,
+} from "@shared/coach";
+import { isoWeek, monthBounds } from "@shared/dates";
+import { lireFluxReponse } from "./api";
 import type { z } from "zod";
 
 import { ApiError } from "./erreur";
@@ -53,9 +60,6 @@ const entier = (v: string | undefined | null) => (v && /^\d+$/.test(v) ? Number(
 /** PostgREST découpe ses filtres « or » sur les virgules et les parenthèses : on les retire de la recherche. */
 const pourRecherche = (q: string) => q.replace(/[,()*%\\]/g, " ").trim();
 
-const pasEncore = (etape: number, quoi: string) => () => {
-  throw new ApiError(501, `${quoi} arrive à l'étape ${etape} de la migration vers Supabase.`);
-};
 
 // ---------- Lignes Supabase -> objets des écrans ----------
 
@@ -484,7 +488,6 @@ const routes: Route[] = [
     for (const i of b.items) await fixerBudget(i.categoryId, b.month, i.amount);
     return budgets(b.month);
   }],
-  ["GET", /^\/api\/budgets\/suggest$/, pasEncore(3, "La suggestion de budgets")],
 
   // Projets
   ["GET", /^\/api\/projects$/, () => projets()],
@@ -537,22 +540,27 @@ const routes: Route[] = [
     const { data, error } = await supabase.rpc("regle_pour", { p_libelle: q.get("label") ?? "" });
     echec(error);
     const r = (data as { category_id: number; wallet_id: number | null }[])[0];
-    return r ? { categoryId: r.category_id, walletId: r.wallet_id, source: "rule" } : { categoryId: null, walletId: null, source: "none" };
+    if (r) return { categoryId: r.category_id, walletId: r.wallet_id, source: "rule" };
+    const [id] = await categoriserParIa([q.get("label") ?? ""]).catch(() => [null]);
+    return id ? { categoryId: id, walletId: null, source: "ai" } : { categoryId: null, walletId: null, source: "none" };
   }],
 
   // Réglages du foyer
   ["GET", /^\/api\/settings$/, async () => {
     const { data, error } = await supabase.from("settings").select("key, value");
     echec(error);
-    const out: Record<string, string> = { aiKey: "" };
-    for (const r of data as { key: string; value: string }[]) out[r.key] = r.value;
+    const out: Record<string, string> = {};
+    for (const r of data as { key: string; value: string }[]) if (r.key !== "chatMemory" && !r.key.startsWith("goal:")) out[r.key] = r.value;
+    // La clé reste sur le serveur : on n'en montre que les quatre derniers caractères.
+    out.aiKey = await ia<{ cle: string }>("etat").then((e) => e.cle).catch(() => "");
     return out;
   }],
   ["PUT", /^\/api\/settings$/, async (_p, _q, body) => {
     const lignes = Object.entries(body as Record<string, unknown>)
       .filter(([k, v]) => typeof v === "string" && k.length < 40 && k !== "aiKey")
       .map(([key, value]) => ({ key, value: value as string }));
-    if ((body as Record<string, unknown>).aiKey) throw new ApiError(501, "La clé IA sera enregistrée côté serveur à l'étape 3 de la migration.");
+    const cle = (body as Record<string, unknown>).aiKey;
+    if (typeof cle === "string") await ia("cle", { cle: cle.trim() });
     if (lignes.length) echec((await supabase.from("settings").upsert(lignes, { onConflict: "foyer_id,key" })).error);
     return { ok: true };
   }],
@@ -560,12 +568,7 @@ const routes: Route[] = [
 
   // Pas encore migré
   ...routesEtape2(),
-  ["GET", /^\/api\/ai\/usage$/, async () => ({ mois: todayIso().slice(0, 7), appels: 0, entree: 0, sortie: 0, centsUsd: 0, parFonction: [], plafondCents: 500, consommeCents: 0, depasse: false })],
-  ["GET", /^\/api\/ai\//, pasEncore(3, "L'IA")],
-  ["POST", /^\/api\/ai\//, pasEncore(3, "L'IA")],
-  ["GET", /^\/api\/coach\//, pasEncore(3, "Le coach")],
-  ["POST", /^\/api\/coach\//, pasEncore(3, "Le coach")],
-  ["DELETE", /^\/api\/coach\//, pasEncore(3, "Le coach")],
+  ...routesEtape3(),
 ];
 
 // ---------- Étape 2 : suivi, import de relevé, sauvegarde ----------
@@ -711,11 +714,7 @@ function routesEtape2(): Route[] {
         .map((x) => ({ label: x.label, count: Number(x.count), total: x.total, categoryName: x.category_name }));
       return calculerEvitables(lignes, cats, key, today, projetsEnCours.find((p) => !p.done)?.name ?? null, topLabels);
     }],
-    // L'objectif rédigé par l'IA arrive à l'étape 3 ; d'ici là, l'objectif calculé.
-    ["GET", /^\/api\/stats\/avoidable\/goal$/, async (_p, q) => {
-      const s = (await appeler<{ goal: unknown }>("GET", `/api/stats/avoidable?period=${periode(q.get("period"))}`));
-      return { goal: s.goal };
-    }],
+    ["GET", /^\/api\/stats\/avoidable\/goal$/, async (_p, q) => ({ goal: await objectifIa(periode(q.get("period"))) })],
     ["GET", /^\/api\/stats$/, async (_p, q) => {
       const month = q.get("month") ?? todayIso().slice(0, 7);
       const [lignes, cats] = await Promise.all([lignesJour(`${shiftMonth(month, -11)}-01`, addDays(`${shiftMonth(month, 1)}-01`, -1)), categoriesSuivi()]);
@@ -760,10 +759,28 @@ function routesEtape2(): Route[] {
       const importId = (lot as { id: number }).id;
       let ignorees = 0;
       const lignes = [];
+      // Ce que ni les règles ni la banque ne classent part à l'IA, par paquets de libellés distincts.
+      const gardees = rows.filter((r) => !(r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)));
+      const inconnus = [...new Set(gardees
+        .filter((r) => !regles.match(r.label) && matchBankCategory(cats, r.type!, r.bankCategory, r.bankSubCategory) === null)
+        .map((r) => normalizeLabel(r.label)))];
+      const parIa = new Map<string, number | null>();
+      const exemple = new Map(gardees.map((r) => [normalizeLabel(r.label), r.label]));
+      try {
+        for (const paquet of paquets(inconnus, 50)) {
+          const ids = await categoriserParIa(paquet.map((n) => exemple.get(n) ?? n));
+          paquet.forEach((n, i) => parIa.set(n, ids[i] ?? null));
+        }
+      } catch {
+        /* pas de clé, plafond atteint ou IA indisponible : catégorie par défaut, à vérifier */
+      }
+      const valides = new Set(cats.map((x) => x.id));
       for (const r of rows) {
         if (r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)) { ignorees++; continue; }
         const regle = regles.match(r.label)?.categoryId ?? null;
-        const categoryId = regle ?? matchBankCategory(cats, r.type!, r.bankCategory, r.bankSubCategory) ?? categorieParDefaut(cats, r.type!);
+        const devine = parIa.get(normalizeLabel(r.label)) ?? null;
+        const categoryId = regle ?? matchBankCategory(cats, r.type!, r.bankCategory, r.bankSubCategory)
+          ?? (devine !== null && valides.has(devine) ? devine : null) ?? categorieParDefaut(cats, r.type!);
         lignes.push({
           type: r.type, amount: Math.abs(r.amount), date: r.date, wallet_id: input.walletId, category_id: categoryId,
           label: r.label, import_id: importId, status: regle !== null && input.autoConfirmKnown ? "confirmed" : "to_verify",
@@ -800,6 +817,304 @@ function routesEtape2(): Route[] {
           t.paymentMethod === "card" ? "Carte" : t.paymentMethod === "cash" ? "Espèces" : null, t.label, t.note, t.createdBy].map(celluleCsv).join(";"));
       return "\uFEFF" + [entete.join(";"), ...corps].join("\n");
     }],
+  ];
+}
+
+// ---------- Étape 3 : IA et coach ----------
+
+type TransportIa = (corps: Record<string, unknown>) => Promise<Response>;
+
+/** Appel de la fonction « ia » de Supabase, avec le jeton de la session en cours. */
+let transportIa: TransportIa = async (corps) => {
+  const { data } = await supabase.auth.getSession();
+  const jeton = data.session?.access_token;
+  if (!jeton) throw new ApiError(401, "Connectez-vous pour continuer.");
+  return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ia`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${jeton}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, "Content-Type": "application/json" },
+    body: JSON.stringify(corps),
+  });
+};
+/** Pour les tests : appeler la fonction directement plutôt que par le réseau. */
+export function remplacerTransportIa(t: TransportIa) {
+  transportIa = t;
+}
+
+async function ia<T>(action: string, corps: Record<string, unknown> = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await transportIa({ action, ...corps });
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw new ApiError(503, "Le service IA est injoignable. Vérifiez la connexion.");
+  }
+  const donnees = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new ApiError(res.status, donnees.error ?? `Service IA : erreur ${res.status}`);
+  return donnees;
+}
+
+async function catalogueIa() {
+  const [cats, ws] = await Promise.all([categories(), portefeuilles()]);
+  return catalogue(cats, ws);
+}
+
+async function categoriserParIa(libelles: string[]): Promise<(number | null)[]> {
+  if (!libelles.length) return [];
+  const r = await ia<{ categories: (number | null)[] }>("categoriser", { libelles, catalogue: await catalogueIa() });
+  return r.categories;
+}
+
+/** Une image en base64, par morceaux : btoa refuse les chaînes trop longues d'un coup. */
+function enBase64(octets: Uint8Array): string {
+  let binaire = "";
+  for (let i = 0; i < octets.length; i += 0x8000) binaire += String.fromCharCode(...octets.subarray(i, i + 0x8000));
+  return btoa(binaire);
+}
+
+/** Les chiffres que le coach commente, lus dans Supabase. */
+async function donneesCoach(today = todayIso()): Promise<DonneesCoach> {
+  const month = today.slice(0, 7);
+  const fin = monthBounds(month).end;
+  const debut = debutDonnees(today);
+  const [cats, lignes, bMois, bPrec, soldes, projetsListe, { data: ech, error: e1 }, depenses, { data: recs, error: e2 }, { data: virs, error: e3 }] = await Promise.all([
+    categoriesSuivi(),
+    lignesJour(monthBounds(shiftMonth(month, -3)).start, fin),
+    budgets(month),
+    budgets(shiftMonth(month, -1)),
+    portefeuilles(),
+    projets(),
+    supabase.rpc("echeances", { p_du: today, p_au: addDays(today, 30) }),
+    toutesLesLignes<{ id: number; amount: number; label: string; date: string; category_name: string | null; category_id: number | null; category_parent_id: number | null; technical_key: string | null; recurrence_id: number | null }>((a, b) =>
+      supabase.from("transactions_detail").select("id, amount, label, date, category_name, category_id, category_parent_id, technical_key, recurrence_id")
+        .eq("type", "expense").gte("date", debut).lte("date", fin).order("id").range(a, b)),
+    supabase.from("recurrences").select("label"),
+    supabase.from("transactions").select("project_id, to_wallet_id, amount").eq("type", "transfer").not("project_id", "is", null).gte("date", addDays(today, -7)).lte("date", today),
+  ]);
+  echec(e1); echec(e2); echec(e3);
+  const echeances: UpcomingBill[] = (ech as { recurrence_id: number; label: string; amount: number; date: string; type: TxType }[])
+    .map((e) => ({ recurrenceId: e.recurrence_id, label: e.label, amount: e.amount, date: e.date, type: e.type }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const versements = new Map<string, number>();
+  for (const v of virs as { project_id: number; to_wallet_id: number; amount: number }[]) {
+    const p = projetsListe.find((x) => x.id === v.project_id);
+    if (p && v.to_wallet_id === p.walletId) versements.set(p.name, (versements.get(p.name) ?? 0) + v.amount);
+  }
+  return {
+    today, categories: cats, lignes, budgetsMois: bMois.lines, budgetsPrecedent: bPrec.lines, soldes, projets: projetsListe, echeances,
+    depenses: depenses.map((x): DepenseCoach => ({
+      id: x.id, amount: x.amount, label: x.label, date: x.date, category_name: x.category_name,
+      parent: x.category_id === null ? null : x.category_parent_id ?? x.category_id, technique: x.technical_key !== null, recurrence_id: x.recurrence_id,
+    })),
+    libellesRecurrences: (recs as { label: string }[]).map((r) => r.label),
+    versements: [...versements].map(([name, total]) => ({ name, total })),
+  };
+}
+
+// Chat
+
+const HISTORY_KEPT = 6;
+const MEMORY_EVERY = 12;
+
+interface LigneMessage { id: number; role: "user" | "assistant"; content: string; created_at: string }
+const versMessage = (r: LigneMessage): ChatMessage => ({ id: r.id, role: r.role, content: r.content, createdAt: r.created_at });
+
+async function derniersMessages(limite: number): Promise<ChatMessage[]> {
+  const { data, error } = await supabase.from("chat_messages").select("id, role, content, created_at").order("id", { ascending: false }).limit(limite);
+  echec(error);
+  return (data as LigneMessage[]).reverse().map(versMessage);
+}
+
+interface Memoire { text: string; upTo: number }
+async function lireMemoire(): Promise<Memoire> {
+  const brut = await reglage("chatMemory");
+  return brut ? (JSON.parse(brut) as Memoire) : { text: "", upTo: 0 };
+}
+
+/** Les anciens échanges sont condensés en quelques lignes plutôt que renvoyés à chaque question. */
+async function rafraichirMemoire() {
+  const memoire = await lireMemoire();
+  const { data: c } = await supabase.from("chat_messages").select("id").order("id", { ascending: false }).range(HISTORY_KEPT, HISTORY_KEPT);
+  const coupure = (c as { id: number }[] | null)?.[0]?.id;
+  if (coupure === undefined || coupure <= memoire.upTo) return;
+  const { data } = await supabase.from("chat_messages").select("id, role, content, created_at").gt("id", memoire.upTo).lte("id", coupure).order("id");
+  const frais = (data ?? []) as LigneMessage[];
+  if (frais.length < MEMORY_EVERY) return;
+  const { texte } = await ia<{ texte: string }>("memoire", { memoire: memoire.text, echanges: frais.map((m) => ({ role: m.role, content: m.content })) });
+  if (!texte) return;
+  await supabase.from("settings").upsert({ key: "chatMemory", value: JSON.stringify({ text: texte, upTo: coupure }) }, { onConflict: "foyer_id,key" });
+}
+
+/**
+ * Une question au coach, avec la réponse affichée mot à mot. Les messages sont
+ * enregistrés dans la base du foyer : les deux conjoints voient la même conversation.
+ */
+export async function envoyerAuCoach(question: string, auFil: (morceau: string) => void = () => undefined): Promise<ChatMessage> {
+  const texte = question.trim();
+  if (!texte || texte.length > 1000) throw new ApiError(400, "Question vide ou trop longue (1 000 caractères).");
+  const [historique, memoire, d] = await Promise.all([derniersMessages(HISTORY_KEPT), lireMemoire(), donneesCoach()]);
+  echec((await supabase.from("chat_messages").insert({ role: "user", content: texte })).error);
+  let res: Response;
+  try {
+    res = await transportIa({ action: "chat", question: texte, briefing: briefing(d), memoire: memoire.text, historique: historique.map((m) => ({ role: m.role, content: m.content })) });
+  } catch {
+    throw new ApiError(503, "Le service IA est injoignable. Vérifiez la connexion.");
+  }
+  let fin: string | null = null;
+  let erreur: string | null = null;
+  await lireFluxReponse(res, {
+    morceau: (m) => auFil(String(m)),
+    fin: (m) => { fin = (m as { texte: string }).texte; },
+    erreur: (m) => { erreur = String(m); },
+  });
+  if (erreur) throw new ApiError(502, erreur);
+  if (fin === null) throw new ApiError(502, "La réponse s'est interrompue avant la fin.");
+  const { data, error } = await supabase.from("chat_messages").insert({ role: "assistant", content: fin }).select("id, role, content, created_at").single();
+  echec(error);
+  // La mémoire se met à jour en arrière-plan : elle ne doit jamais retarder ni faire échouer la réponse.
+  void rafraichirMemoire().catch(() => undefined);
+  return versMessage(data as LigneMessage);
+}
+
+// Conseil de la semaine
+
+async function conseilDeLaSemaine(forcer: boolean): Promise<WeeklyAdvice> {
+  const today = todayIso();
+  const week = isoWeek(today);
+  if (!forcer) {
+    const { data, error } = await supabase.from("weekly_advice").select("*").eq("week", week).maybeSingle();
+    echec(error);
+    const c = data as { week: string; message: string; insights: Insight[]; generated_by: "ai" | "template"; created_at: string } | null;
+    if (c) return { week: c.week, message: c.message, insights: c.insights, generatedBy: c.generated_by, createdAt: c.created_at };
+  }
+  const insights = calculerConstats(await donneesCoach(today));
+  let message: string, generatedBy: "ai" | "template";
+  try {
+    message = (await ia<{ message: string }>("conseil", { constats: insights })).message;
+    generatedBy = "ai";
+  } catch {
+    message = templateMessage(insights);
+    generatedBy = "template";
+  }
+  const { data, error } = await supabase.from("weekly_advice")
+    .upsert({ week, message, insights, generated_by: generatedBy, created_at: new Date().toISOString() }, { onConflict: "foyer_id,week" }).select("*").single();
+  echec(error);
+  const r = data as { week: string; message: string; insights: Insight[]; generated_by: "ai" | "template"; created_at: string };
+  return { week: r.week, message: r.message, insights: r.insights, generatedBy: r.generated_by, createdAt: r.created_at };
+}
+
+// Budgets suggérés et objectif des dépenses évitables
+
+async function budgetsSuggeres(month: string): Promise<{ items: BudgetSuggestion[]; generatedBy: "ai" | "template" }> {
+  const [lignes, cats, prec] = await Promise.all([
+    lignesJour(monthBounds(shiftMonth(month, -3)).start, monthBounds(shiftMonth(month, -1)).end), categoriesSuivi(), budgets(shiftMonth(month, -1)),
+  ]);
+  const base = suggererBudgets(lignes, cats, prec.lines, month);
+  if (base.length === 0) return { items: base, generatedBy: "template" };
+  try {
+    const r = await ia<{ items: { category_id: number; suggested_da: number; reason: string }[] }>("budgets", {
+      mois: month,
+      base: base.map((b) => ({ category_id: b.categoryId, name: b.categoryName, previous_budget_da: b.previousBudget / 100, last_month_spent_da: b.lastSpent / 100, average_3_months_da: b.average3 / 100, saved_last_month_da: b.saved / 100, computed_suggestion_da: b.suggested / 100 })),
+    });
+    const parId = new Map(r.items.map((i) => [i.category_id, i]));
+    const items = base.map((b) => {
+      const a = parId.get(b.categoryId);
+      if (!a || !(a.suggested_da > 0)) return b;
+      // L'IA affine, elle ne décide pas : on reste à 20 % du calcul.
+      const cents = Math.round(a.suggested_da * 100);
+      const borne = Math.min(Math.round(b.suggested * 1.2), Math.max(Math.round(b.suggested * 0.8), cents));
+      return { ...b, suggested: Math.ceil(borne / 10000) * 10000, reason: a.reason.trim() || b.reason };
+    });
+    return { items, generatedBy: "ai" };
+  } catch {
+    return { items: base, generatedBy: "template" };
+  }
+}
+
+async function objectifIa(period: PeriodKey): Promise<AvoidableGoal | null> {
+  const today = todayIso();
+  const stats = await appeler<ReturnType<typeof calculerEvitables>>("GET", `/api/stats/avoidable?period=${period}`);
+  if (!stats.goal || stats.total <= 0) return null;
+  const cle = `goal:${period}`;
+  const cache = await reglage(cle);
+  if (cache) {
+    const c = JSON.parse(cache) as { date: string; total: number; goal: AvoidableGoal };
+    if (c.date === today && c.total === stats.total) return c.goal;
+  }
+  const calcule = stats.goal;
+  let goal: AvoidableGoal = calcule;
+  try {
+    const p = await ia<{ target_da: number; reason: string; actions: string[] }>("objectif", {
+      donnees: {
+        period, total_da: stats.total / 100, previous_total_da: stats.previousTotal / 100, share_of_all_expenses: Math.round(stats.shareOfExpenses * 100),
+        computed_target_da: calcule.target / 100, project: calcule.projectName,
+        by_category: stats.byCategory.map((c) => ({ name: c.name, total_da: c.total / 100, share: Math.round(c.share * 100) })),
+        frequent_labels: stats.topLabels.map((l) => ({ label: l.label, count: l.count, total_da: l.total / 100, category: l.categoryName ?? "" })),
+      },
+    });
+    if (p.target_da > 0) {
+      const cents = Math.round(p.target_da * 100);
+      const borne = Math.min(Math.round(stats.total * 0.95), Math.max(Math.round(stats.total * 0.5), cents));
+      const target = Math.floor(borne / 10000) * 10000;
+      if (target > 0 && target < stats.total) {
+        goal = { target, saving: stats.total - target, projectName: calcule.projectName, reason: p.reason.trim() || calcule.reason, actions: p.actions.map((a) => a.trim()).filter(Boolean).slice(0, 3), generatedBy: "ai" };
+      }
+    }
+  } catch {
+    /* clé absente, refusée ou trop lente : objectif calculé */
+  }
+  await supabase.from("settings").upsert({ key: cle, value: JSON.stringify({ date: today, total: stats.total, goal }) }, { onConflict: "foyer_id,key" });
+  return goal;
+}
+
+function routesEtape3(): Route[] {
+  return [
+    ["GET", /^\/api\/ai\/usage$/, async (_p, q) => {
+      const mois = q.get("month") ?? new Date().toISOString().slice(0, 7);
+      const appels = await toutesLesLignes<{ fonction: string; input_tokens: number; output_tokens: number; micro_usd: number }>((a, b) =>
+        supabase.from("ai_calls").select("fonction, input_tokens, output_tokens, micro_usd").gte("created_at", `${mois}-01T00:00:00Z`)
+          .lt("created_at", `${shiftMonth(mois, 1)}-01T00:00:00Z`).order("id").range(a, b));
+      const parFonction = new Map<string, { appels: number; micro: number }>();
+      let entree = 0, sortie = 0, micro = 0;
+      for (const x of appels) {
+        entree += x.input_tokens; sortie += x.output_tokens; micro += Number(x.micro_usd);
+        const f = parFonction.get(x.fonction) ?? { appels: 0, micro: 0 };
+        f.appels++; f.micro += Number(x.micro_usd);
+        parFonction.set(x.fonction, f);
+      }
+      const saisi = Number(String((await reglage("plafondIaUsd")) ?? "").replace(",", "."));
+      const plafondCents = (await reglage("plafondIaUsd")) !== null && Number.isFinite(saisi) && saisi >= 0 ? Math.round(saisi * 100) : 500;
+      const consommeCents = Math.round(micro / 10_000);
+      return {
+        mois, appels: appels.length, entree, sortie, centsUsd: consommeCents,
+        parFonction: [...parFonction].sort((a, b) => b[1].micro - a[1].micro).map(([fonction, f]) => ({ fonction, appels: f.appels, centsUsd: Math.round(f.micro / 10_000) })),
+        plafondCents, consommeCents, depasse: plafondCents > 0 && consommeCents >= plafondCents,
+      };
+    }],
+    ["GET", /^\/api\/ai\/test$/, () => ia("test")],
+    ["POST", /^\/api\/ai\/receipt$/, async (_p, _q, body): Promise<TransactionDraft> => {
+      const fichier = body instanceof FormData ? body.get("photo") : null;
+      if (!(fichier instanceof Blob)) throw new ApiError(400, "Photo manquante");
+      if (fichier.size > 10 * 1024 * 1024) throw new ApiError(400, "Photo trop lourde (10 Mo max)");
+      const octets = new Uint8Array(await fichier.arrayBuffer());
+      const type = typeImage(octets);
+      if (!type) throw new ApiError(400, "Ce fichier n'est pas une photo (JPEG, PNG ou WebP).");
+      return ia<TransactionDraft>("ticket", { image: enBase64(octets), media_type: type, catalogue: await catalogueIa(), today: todayIso() });
+    }],
+    ["POST", /^\/api\/ai\/parse$/, async (_p, _q, body): Promise<TransactionDraft> => {
+      const texte = String((body as { text?: string })?.text ?? "").trim();
+      if (!texte || texte.length > 500) throw new ApiError(400, "Phrase vide ou trop longue (500 caractères).");
+      return ia<TransactionDraft>("dictee", { texte, catalogue: await catalogueIa(), today: todayIso() });
+    }],
+    ["GET", /^\/api\/budgets\/suggest$/, (_p, q) => budgetsSuggeres(q.get("month") ?? todayIso().slice(0, 7))],
+    ["GET", /^\/api\/coach\/weekly$/, (_p, q) => conseilDeLaSemaine(q.get("refresh") === "1")],
+    ["GET", /^\/api\/coach\/insights$/, async () => calculerConstats(await donneesCoach())],
+    ["GET", /^\/api\/coach\/chat$/, () => derniersMessages(50)],
+    ["DELETE", /^\/api\/coach\/chat$/, async () => {
+      echec((await supabase.from("chat_messages").delete().gt("id", 0)).error);
+      echec((await supabase.from("settings").delete().eq("key", "chatMemory")).error);
+      return { ok: true };
+    }],
+    ["POST", /^\/api\/coach\/chat$/, (_p, _q, body) => envoyerAuCoach(String((body as { message?: string })?.message ?? ""))],
   ];
 }
 

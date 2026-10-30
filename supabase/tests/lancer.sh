@@ -46,3 +46,5 @@ $P -d essai -tA -c "set role authenticated" -c "select set_config('request.jwt.c
 echo "photo dans son propre foyer | acceptée"
 VUES=$($P -d essai -tA -c "set role authenticated" -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false)" -c "select count(*) from storage.objects" | tail -1)
 [ "$VUES" = "0" ] && echo "photo d'un autre foyer invisible | ok" || { echo "photo d'un autre foyer | ÉCHEC : visible"; exit 1; }
+# La clé IA ne se lit pas depuis l'application, même par les membres du foyer.
+attaque "lire la clé IA depuis l'application" "select 1/count(*) from public.cles_ia"

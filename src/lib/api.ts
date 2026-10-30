@@ -33,6 +33,11 @@ export async function lireFlux(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  return lireFluxReponse(res, sur);
+}
+
+/** Lit les événements d'une réponse déjà reçue : sert aussi à la fonction IA de Supabase. */
+export async function lireFluxReponse(res: Response, sur: { [event: string]: (donnee: unknown) => void }): Promise<void> {
   if (!res.ok || !res.body) {
     let message = res.statusText;
     try {

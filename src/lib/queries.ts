@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, lireFlux } from "./api";
+import { api } from "./api";
 import type {
   BudgetLine, Category, CategoryInput, CategorySuggestion, HomeSummary, ImportBatch, ImportColumnMapping, ImportCommitInput,
   ChatMessage, HabitSuggestion, ImportPreview, LabelSuggestion, Project, ProjectInput, Recurrence, RecurrenceInput, Transaction, TransactionDraft, WeeklyAdvice,
@@ -156,17 +156,10 @@ export const useChat = () => useQuery({ queryKey: ["chat"], queryFn: () => api.g
 export function useSendChatStream() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ message, onDelta }: { message: string; onDelta: (morceau: string) => void }) =>
-      new Promise<ChatMessage>((resoudre, rejeter) => {
-        let fini: ChatMessage | null = null;
-        lireFlux("/api/coach/chat/stream", { message }, {
-          morceau: (m) => onDelta(String(m)),
-          fin: (m) => { fini = m as ChatMessage; },
-          erreur: (m) => rejeter(new Error(String(m))),
-        })
-          .then(() => (fini ? resoudre(fini) : rejeter(new Error("La réponse s'est interrompue avant la fin."))))
-          .catch(rejeter);
-      }),
+    mutationFn: async ({ message, onDelta }: { message: string; onDelta: (morceau: string) => void }) => {
+      const { envoyerAuCoach } = await import("./backend");
+      return envoyerAuCoach(message, onDelta);
+    },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["chat"] });
       void qc.invalidateQueries({ queryKey: ["aiUsage"] });
