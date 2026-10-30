@@ -22,11 +22,11 @@ interface RecognitionLike {
 
 type Constructeur = new () => RecognitionLike;
 const constructeur = (): Constructeur | null => {
-  const w = window as unknown as { SpeechRecognition?: Constructeur; webkitSpeechRecognition?: Constructeur };
+  const w = globalThis as unknown as { SpeechRecognition?: Constructeur; webkitSpeechRecognition?: Constructeur };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 };
 
-export const dicteeDisponible = () => typeof window !== "undefined" && constructeur() !== null;
+export const dicteeDisponible = () => constructeur() !== null;
 
 /** Silence accepté entre deux morceaux de phrase, une fois qu'on a commencé à parler. */
 export const SILENCE_MS = 2500;

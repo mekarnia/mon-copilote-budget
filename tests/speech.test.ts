@@ -19,7 +19,7 @@ class FauxMoteur {
 
 async function charger() {
   FauxMoteur.instances = [];
-  vi.stubGlobal("window", { SpeechRecognition: FauxMoteur });
+  vi.stubGlobal("SpeechRecognition", FauxMoteur);
   vi.resetModules();
   return import("../src/lib/speech");
 }
