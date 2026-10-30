@@ -12,6 +12,7 @@ import { ImportSettings } from "./ImportSettings";
 import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
 import { formatCents } from "@shared/money";
 import { supabase } from "@/lib/supabase";
+import { api } from "@/lib/api";
 import { WALLET_TYPES, type Category, type Recurrence, type TxType, type Wallet, type WalletType } from "@shared/types";
 
 const WALLET_LABEL: Record<WalletType, string> = { courant: "Compte courant", especes: "Espèces", livret: "Livret / épargne", autre: "Autre" };
@@ -294,11 +295,31 @@ function BackupSettings() {
   const [plafond, setPlafond] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function onRestore(file: File) {
-    if (!confirm("Restaurer cette sauvegarde remplace toutes les données actuelles. Continuer ?")) return;
+  /** Les fichiers sont fabriqués dans le navigateur à partir des données du foyer, puis enregistrés. */
+  async function telecharger(url: string, format: "json" | "csv") {
+    setMessage("Préparation du fichier…");
     try {
-      await restore.mutateAsync(JSON.parse(await file.text()));
-      setMessage("Sauvegarde restaurée.");
+      const contenu = await api.get<unknown>(url);
+      const blob = format === "json"
+        ? new Blob([JSON.stringify(contenu)], { type: "application/json" })
+        : new Blob([contenu as string], { type: "text/csv;charset=utf-8" });
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(blob);
+      lien.download = `${format === "json" ? "budget" : "operations"}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      lien.click();
+      setTimeout(() => URL.revokeObjectURL(lien.href), 10_000);
+      setMessage(null);
+    } catch (e) {
+      setMessage(`Échec : ${(e as Error).message}`);
+    }
+  }
+
+  async function onRestore(file: File) {
+    if (!confirm("Restaurer cette sauvegarde remplace toutes les données du foyer, pour tous ses membres. Continuer ?")) return;
+    try {
+      setMessage("Restauration en cours…");
+      const r = (await restore.mutateAsync(JSON.parse(await file.text()))) as { transactions?: number; ignorees?: number };
+      setMessage(`Sauvegarde restaurée : ${r.transactions ?? 0} opérations${r.ignorees ? `, ${r.ignorees} ignorées (portefeuille introuvable)` : ""}. Les photos de la version PC ne sont pas reprises.`);
     } catch (e) {
       setMessage(`Échec : ${(e as Error).message}`);
     }
@@ -309,8 +330,8 @@ function BackupSettings() {
       <Back title="Sauvegarde" />
       <div className="card space-y-3">
         <h2 className="font-semibold">Exporter</h2>
-        <a className="btn-ghost w-full" href="/api/backup.json" download>Sauvegarde complète (JSON)</a>
-        <a className="btn-ghost w-full" href="/api/export.csv" download>Transactions (CSV pour Excel)</a>
+        <button className="btn-ghost w-full" onClick={() => telecharger("/api/backup.json", "json")}>Sauvegarde complète (JSON)</button>
+        <button className="btn-ghost w-full" onClick={() => telecharger("/api/export.csv", "csv")}>Transactions (CSV pour Excel)</button>
       </div>
       <div className="card space-y-3">
         <h2 className="font-semibold">Restaurer</h2>

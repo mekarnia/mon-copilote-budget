@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 P="psql -U postgres -v ON_ERROR_STOP=1 -q"
-$P -d postgres -c "drop database if exists essai" -c "create database essai"
+$P -d postgres -c "drop database if exists essai with (force)" -c "create database essai"
 $P -d essai -f tests/stub-supabase.sql
 for f in migrations/*.sql; do $P -d essai -f "$f"; done
 $P -d essai -tA -F ' | ' -f tests/rls.sql | grep '|'
@@ -37,3 +37,12 @@ if $P -d essai -tA -c "set role anon" -c "select count(*) from public.transactio
   echo "visiteur anonyme | ÉCHEC : lecture acceptée"; exit 1
 fi
 echo "visiteur anonyme | refusé"
+# Photos : chacun ne dépose et ne voit que dans le dossier de son foyer.
+F_INCONNU=$($P -d essai -tA -c "select foyer_id from public.membres where prenom = 'X'")
+F_YANISS=$($P -d essai -tA -c "select foyer_id from public.membres where prenom = 'Yaniss'")
+attaque "déposer une photo chez un autre foyer" "insert into storage.objects (bucket_id, name) values ('tickets', '$F_YANISS/vol.jpg')"
+$P -d essai -tA -c "set role authenticated" -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000c', false)" \
+  -c "insert into storage.objects (bucket_id, name) values ('tickets', '$F_INCONNU/12-1.jpg')" >/dev/null
+echo "photo dans son propre foyer | acceptée"
+VUES=$($P -d essai -tA -c "set role authenticated" -c "select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false)" -c "select count(*) from storage.objects" | tail -1)
+[ "$VUES" = "0" ] && echo "photo d'un autre foyer invisible | ok" || { echo "photo d'un autre foyer | ÉCHEC : visible"; exit 1; }

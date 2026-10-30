@@ -4,28 +4,7 @@
  * entrent tous les deux dans l'application sans que personne les ait relus.
  */
 
-export type TypeImage = "image/jpeg" | "image/png" | "image/webp";
-
-export const EXTENSION_IMAGE: Record<TypeImage, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-};
-
-const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-/**
- * Le vrai type d'un fichier, lu dans ses premiers octets.
- * Le type annoncé par le navigateur vient du client : un fichier HTML déclaré
- * « image/png » était accepté, enregistré, puis resservi par le serveur.
- */
-export function typeImage(buf: Buffer): TypeImage | null {
-  if (buf.length < 12) return null;
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.subarray(0, 8).equals(PNG)) return "image/png";
-  if (buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
-  return null;
-}
+export { EXTENSION_IMAGE, typeImage, type TypeImage } from "../../shared/image.js";
 
 // Caractères de contrôle, espaces de largeur nulle et marqueurs de sens d'écriture :
 // invisibles à l'écran, ils servent à cacher du texte dans un libellé.

@@ -24,11 +24,34 @@ function jwt(sub: string) {
 }
 
 // Le client du navigateur, remplacé par un client PostgREST au nom de l'utilisateur courant.
-const etat = vi.hoisted(() => ({ client: null as unknown }));
-vi.mock("../src/lib/supabase", () => ({
-  supabase: new Proxy({}, { get: (_c, prop) => (etat.client as Record<string | symbol, unknown>)[prop] }),
-}));
+// Le stockage des photos est simulé en mémoire, avec la même règle que la
+// politique Supabase : on n'écrit et ne lit que dans le dossier de son foyer.
+const etat = vi.hoisted(() => ({ client: null as unknown, sub: "", fichiers: new Map<string, Uint8Array>(), foyerDe: (_s: string): string => "" }));
+vi.mock("../src/lib/supabase", () => {
+  const dossierAutorise = (chemin: string) => chemin.split("/")[0] === etat.foyerDe(etat.sub);
+  const stockage = {
+    from: () => ({
+      upload: async (chemin: string, octets: Uint8Array) => {
+        if (!dossierAutorise(chemin)) return { data: null, error: { message: "new row violates row-level security policy" } };
+        etat.fichiers.set(chemin, octets);
+        return { data: { path: chemin }, error: null };
+      },
+      remove: async (chemins: string[]) => {
+        for (const c of chemins) if (dossierAutorise(c)) etat.fichiers.delete(c);
+        return { data: [], error: null };
+      },
+      createSignedUrl: async (chemin: string) => ({ data: dossierAutorise(chemin) && etat.fichiers.has(chemin) ? { signedUrl: `signe://${chemin}` } : null, error: null }),
+    }),
+  };
+  const auth = { getUser: async () => ({ data: { user: { id: etat.sub } }, error: null }) };
+  return {
+    supabase: new Proxy({}, {
+      get: (_c, prop) => (prop === "storage" ? stockage : prop === "auth" ? auth : (etat.client as Record<string | symbol, unknown>)[prop]),
+    }),
+  };
+});
 const commeUtilisateur = (sub: string) => {
+  etat.sub = sub;
   etat.client = new PostgrestClient(PGREST, { headers: { Authorization: `Bearer ${jwt(sub)}` } });
   return etat.client as PostgrestClient;
 };
@@ -43,6 +66,8 @@ const del = (url: string) => appeler<Json>("DELETE", url);
 
 const psql = (sql: string) =>
   execFileSync("psql", ["-q", "-v", "ON_ERROR_STOP=1", "-c", "set client_min_messages = warning", "-h", process.env.PGHOST ?? "/var/tmp/pgtest", "-p", process.env.PGPORT ?? "5433", "-U", "postgres", "-d", "essai", "-tA", "-c", sql], { encoding: "utf8" });
+
+etat.foyerDe = (sub: string) => psql(`select foyer_id from public.membres where user_id = '${sub}'`).trim();
 
 const actif = process.env.SUPABASE_LOCAL === "1";
 const mois = todayIso().slice(0, 7);
@@ -208,6 +233,168 @@ describe.skipIf(!actif)("routes /api servies par Supabase", () => {
 
   it("signale clairement ce qui n'est pas encore migré", async () => {
     await expect(get("/api/coach/weekly")).rejects.toThrow(/étape 3/);
-    await expect(post("/api/import/preview", {})).rejects.toThrow(/étape 2/);
+  });
+});
+
+describe.skipIf(!actif)("étape 2 : suivi, photos, import, sauvegarde", () => {
+  const ids: Record<string, number> = {};
+  const formulaire = (champs: Record<string, string | Blob>) => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(champs)) f.append(k, v);
+    return f;
+  };
+
+  beforeAll(async () => {
+    psql(`truncate public.foyers cascade; delete from auth.users;
+          insert into auth.users (id, email) values ('${LUI}', 'lui@essai'), ('${INCONNU}', 'x@essai');`);
+    const c = commeUtilisateur(INCONNU);
+    await c.rpc("creer_foyer", { p_nom: "Autre", p_prenom: "X" });
+    await commeUtilisateur(LUI).rpc("creer_foyer", { p_nom: "Essai", p_prenom: "Lui" });
+    for (const w of await get("/api/wallets") as unknown as Json[]) ids[w.name] = w.id;
+    for (const k of await get("/api/categories") as unknown as Json[]) ids[k.name] = k.id;
+  });
+  afterAll(() => { psql("truncate public.foyers cascade; delete from auth.users;"); });
+
+  it("restaure une sauvegarde de la version PC avec les mêmes chiffres", async () => {
+    const { memDb, catId, walletId } = await import("./helpers.js");
+    const { createTransaction } = await import("../server/services/transactions.js");
+    const { createRecurrence } = await import("../server/services/recurrences.js");
+    const { createProject, contribute } = await import("../server/services/projects.js");
+    const { setBudget } = await import("../server/services/budgets.js");
+    const { exportJson } = await import("../server/services/backup.js");
+    const { homeSummary } = await import("../server/services/home.js");
+    const { periodStats } = await import("../server/services/periods.js");
+    const db = memDb();
+    const cc = walletId(db, "Compte courant"), esp = walletId(db, "Espèces");
+    const ajout = (type: "expense" | "income", amount: number, date: string, cat: string, label: string, w = cc) =>
+      createTransaction(db, { type, amount, date, walletId: w, toWalletId: null, categoryId: catId(db, cat), projectId: null, label, note: "" });
+    ajout("income", 250000, `${mois}-01`, "Salaire", "Salaire");
+    ajout("expense", 4550, todayIso(), "Supermarché", "CB CARREFOUR");
+    ajout("expense", 3200, todayIso(), "Restaurant", "Pizzeria", esp);
+    ajout("expense", 9900, `${shiftMonth(mois, -1)}-15`, "Restaurant", "Pizzeria");
+    db.prepare("INSERT INTO categories (name, kind, parent_id, sort) VALUES ('Coiffeur enfants', 'expense', ?, 99)").run(catId(db, "Enfants"));
+    ajout("expense", 1500, todayIso(), "Coiffeur enfants", "Salon");
+    createTransaction(db, { type: "transfer", amount: 10000, date: todayIso(), walletId: cc, toWalletId: walletId(db, "Livret"), categoryId: null, projectId: null, label: "", note: "" });
+    const p = createProject(db, { name: "Vacances", target: 200000, dueDate: null, walletId: walletId(db, "Livret") });
+    contribute(db, p.id, 5000, cc);
+    createRecurrence(db, { label: "Loyer", type: "expense", amount: 80000, frequency: "monthly", day: 28, walletId: cc, toWalletId: null, categoryId: catId(db, "Loyer ou crédit"), active: true });
+    setBudget(db, catId(db, "Courses"), mois, 3000);
+    db.prepare("INSERT INTO settings (key, value) VALUES ('aiKey', 'sk-ant-secret'), ('plafondIaUsd', '7')").run();
+    const fichier = JSON.parse(JSON.stringify(exportJson(db)));
+    fichier.settings.push({ key: "aiKey", value: "sk-ant-secret" }); // même un fichier trafiqué ne doit pas l'importer
+
+    const r = await post("/api/backup.json", fichier);
+    expect(r).toMatchObject({ ok: true, transactions: 7, ignorees: 0 }); // 5 saisies, 1 virement, 1 versement au projet
+
+    const pc = homeSummary(db, mois);
+    const enLigne = await get(`/api/home?month=${mois}`);
+    for (const k of ["income", "expense", "remaining", "walletsTotal", "upcomingExpense"] as const) expect([k, enLigne[k]]).toEqual([k, pc[k]]);
+    expect(enLigne.redBudgets).toHaveLength(pc.redBudgets.length);
+    expect(enLigne.projects[0]).toMatchObject({ name: "Vacances", saved: 5000 });
+    expect((await get("/api/categories") as unknown as Json[]).some((c) => c.name === "Coiffeur enfants")).toBe(true);
+    expect(await get("/api/settings")).toMatchObject({ plafondIaUsd: "7", aiKey: "" });
+    expect((await get("/api/rules") as unknown as Json[]).map((x) => x.pattern).sort()).toEqual(["carrefour", "pizzeria", "salon", "salaire"].sort());
+    const suiviPc = periodStats(db, "expense", "1m");
+    const suiviEnLigne = await get("/api/stats/period?type=expense&period=1m");
+    expect(suiviEnLigne.total).toBe(suiviPc.total);
+    expect(suiviEnLigne.byCategory.map((c: Json) => [c.name, c.total])).toEqual(suiviPc.byCategory.map((c) => [c.name, c.total]));
+    for (const w of await get("/api/wallets") as unknown as Json[]) ids[w.name] = w.id;
+    for (const k of await get("/api/categories") as unknown as Json[]) ids[k.name] = k.id;
+  });
+
+  it("ne touche pas aux données d'un autre foyer en restaurant", async () => {
+    commeUtilisateur(INCONNU);
+    expect(await get("/api/wallets")).toHaveLength(3);
+    expect(await get("/api/transactions")).toHaveLength(0);
+    commeUtilisateur(LUI);
+  });
+
+  it("refait l'aller-retour : sa propre sauvegarde se restaure à l'identique", async () => {
+    const avant = await get(`/api/home?month=${mois}`);
+    const fichier = await get("/api/backup.json");
+    expect(fichier.transactions[0]).not.toHaveProperty("foyer_id");
+    await post("/api/backup.json", fichier);
+    // Les identifiants sont renumérotés à chaque restauration ; les chiffres et les noms, eux, ne bougent pas.
+    const sansIds = (x: unknown): unknown => JSON.parse(JSON.stringify(x, (k, v) => (/^(id|categoryId|walletId|recurrenceId)$/.test(k) ? undefined : v)));
+    expect(sansIds(await get(`/api/home?month=${mois}`))).toEqual(sansIds(avant));
+    for (const w of await get("/api/wallets") as unknown as Json[]) ids[w.name] = w.id;
+    for (const k of await get("/api/categories") as unknown as Json[]) ids[k.name] = k.id;
+  });
+
+  it("calcule le suivi, les mois et les dépenses évitables", async () => {
+    const s = await get(`/api/stats?month=${mois}`);
+    expect(s.monthly).toHaveLength(12);
+    expect(s.monthly[11]).toMatchObject({ month: mois, income: 250000 });
+    const ev = await get("/api/stats/avoidable?period=6m");
+    expect(ev.total).toBe(3200 + 9900);
+    expect(ev.topLabels[0]).toMatchObject({ label: "Pizzeria", count: 2, total: 13100 });
+    expect(ev.goal).toMatchObject({ generatedBy: "template", projectName: "Vacances" });
+    expect((await get("/api/stats/avoidable/goal?period=6m")).goal).toEqual(ev.goal);
+  });
+
+  it("joint, affiche et retire une photo de ticket dans le dossier du foyer", async () => {
+    const t = (await get("/api/transactions?q=carrefour") as unknown as Json[])[0];
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array(30).fill(0)]);
+    await expect(post(`/api/transactions/${t.id}/photo`, formulaire({ photo: new Blob(["<html>"]) }))).rejects.toThrow(/pas une photo/);
+    const avec = await post(`/api/transactions/${t.id}/photo`, formulaire({ photo: new Blob([jpeg], { type: "image/jpeg" }) }));
+    const foyer = etat.foyerDe(LUI);
+    expect(avec.photoPath).toMatch(new RegExp(`^signe://${foyer}/${t.id}-\\d+\\.jpg$`));
+    expect(etat.fichiers.size).toBe(1);
+    const remplacee = await post(`/api/transactions/${t.id}/photo`, formulaire({ photo: new Blob([jpeg]) }));
+    expect(remplacee.photoPath).not.toBe(avec.photoPath);
+    expect(etat.fichiers.size).toBe(1); // l'ancienne est supprimée
+    commeUtilisateur(INCONNU);
+    await expect(post(`/api/transactions/${t.id}/photo`, formulaire({ photo: new Blob([jpeg]) }))).rejects.toThrow(/Introuvable/);
+    commeUtilisateur(LUI);
+    expect((await del(`/api/transactions/${t.id}/photo`)).photoPath).toBeNull();
+    expect(etat.fichiers.size).toBe(0);
+  });
+
+  it("importe un relevé : correspondance, doublons, règles, classement de la banque, annulation", async () => {
+    const csv = [
+      "Date;Libellé;Montant;Catégorie;Sous-catégorie",
+      `${todayIso().split("-").reverse().join("/")};CB CARREFOUR;-45,50;;`, // doublon de la saisie existante
+      `${addDays(todayIso(), -1).split("-").reverse().join("/")};PIZZERIA DU PORT;-18,00;;`, // règle « pizzeria »
+      `${addDays(todayIso(), -2).split("-").reverse().join("/")};ENGIE FACTURE;-60,00;Logement;Electricité`, // banque
+      `${addDays(todayIso(), -3).split("-").reverse().join("/")};MYSTERE SARL;-12,00;;`, // rien : catégorie par défaut
+      `${addDays(todayIso(), -3).split("-").reverse().join("/")};VIREMENT EMPLOYEUR;1500,00;;`,
+      "pas une date;x;1;;",
+    ].join("\r\n");
+    const apercu = await post("/api/import/preview", formulaire({ file: new Blob([csv]), walletId: String(ids["Compte courant"]), bank: "Ma Banque" }));
+    expect(apercu.mapping).toMatchObject({ date: 0, label: 1, amount: 2, category: 3, subCategory: 4, dateFormat: "dmy" });
+    expect(apercu.rows.map((r: Json) => [r.duplicate, r.categorySource, r.error])).toEqual([
+      [true, "rule", null], [false, "rule", null], [false, "bank", null], [false, "ai", null], [false, "ai", null], [false, null, "Date illisible"],
+    ]);
+    const lot = await post("/api/import/commit", {
+      bank: "Ma Banque", walletId: ids["Compte courant"], mapping: apercu.mapping, csv: apercu.csv, fileName: "releve.csv", skipDuplicates: true, autoConfirmKnown: true,
+    });
+    expect(lot).toMatchObject({ createdCount: 4, skippedCount: 2, remaining: 4, walletName: "Compte courant", fileName: "releve.csv" });
+    const importees = await get("/api/transactions?q=") as unknown as Json[];
+    const parLibelle = Object.fromEntries(importees.filter((t) => t.importId === lot.id).map((t) => [t.label, [t.categoryName, t.status]]));
+    expect(parLibelle).toEqual({
+      "PIZZERIA DU PORT": ["Restaurant", "confirmed"],
+      "ENGIE FACTURE": ["Électricité et gaz", "to_verify"],
+      "MYSTERE SARL": ["Divers", "to_verify"],
+      "VIREMENT EMPLOYEUR": ["Autres revenus", "to_verify"],
+    });
+    const second = await post("/api/import/preview", formulaire({ file: new Blob([csv]), walletId: String(ids["Compte courant"]), bank: "ma banque" }));
+    expect(second.savedMapping).toBe(true);
+    expect(second.banks).toEqual(["ma banque"]);
+    expect(second.rows.filter((r: Json) => r.duplicate)).toHaveLength(5);
+    expect(await del(`/api/imports/${lot.id}`)).toEqual({ deleted: 4 });
+    expect(await get("/api/imports")).toHaveLength(0);
+  });
+
+  it("lit plus de 1 000 lignes par tranches", async () => {
+    psql(`insert into public.transactions (foyer_id, type, amount, date, wallet_id, category_id, label, status)
+          select (select foyer_id from public.membres where user_id = '${LUI}'), 'expense', 100, current_date - (g % 300), ${ids["Compte courant"]}, ${ids["Supermarché"]}, 'lot ' || g, 'to_verify'
+          from generate_series(1, 1500) g`);
+    expect((await get("/api/transactions/to-verify-count")).count).toBe(1500);
+    expect(await get("/api/transactions?status=to_verify")).toHaveLength(1500);
+    expect(await get("/api/transactions?status=to_verify&limit=1200")).toHaveLength(1200);
+    const toutes = (await get("/api/transactions?status=to_verify") as unknown as Json[]).map((t) => t.id);
+    expect((await post("/api/transactions/bulk", { ids: toutes, action: "delete" })).done).toBe(1500);
+    const csv = await get("/api/export.csv") as unknown as string;
+    expect(csv.split("\n")[0]).toContain("saisi_par");
   });
 });

@@ -10,13 +10,23 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import {
-  budgetApplyInput, budgetCopyInput, budgetInput, bulkTransactionInput, categoryInput, contributeInput, projectInput, recurrenceInput,
+  budgetApplyInput, budgetCopyInput, budgetInput, bulkTransactionInput, categoryInput, contributeInput, importCommitInput, projectInput, recurrenceInput,
   transactionInput, walletInput,
-  type BudgetLine, type Category, type CategorySuggestion, type HabitSuggestion, type HomeSummary, type LabelSuggestion, type Project,
+  type BudgetLine, type Category, type CategorySuggestion, type HabitSuggestion, type HomeSummary, type ImportBatch, type ImportColumnMapping,
+  type ImportPreviewRow, type LabelSuggestion, type Project, type TxType,
   type Recurrence, type Transaction, type Wallet,
 } from "@shared/types";
 import { addDays, monthOf, nextOccurrence, shiftMonth, todayIso } from "@shared/dates";
 import { classerHabitudes, type LigneHabitude } from "@shared/habitudes";
+import { applyMapping, detectMapping, parseCsv } from "@shared/releve";
+import { matchBankCategory } from "@shared/banque";
+import { rapprocheur, type RuleRow } from "@shared/regles";
+import { normalizeLabel } from "@shared/libelle";
+import { EXTENSION_IMAGE, typeImage } from "@shared/image";
+import {
+  bornesLecture, calculerEvitables, calculerPeriode, calculerStats, periodRange, PERIOD_KEYS,
+  type CategorieSuivi, type LigneJour, type PeriodKey,
+} from "@shared/suivi";
 import type { z } from "zod";
 
 import { ApiError } from "./erreur";
@@ -79,10 +89,59 @@ const versProjet = (r: LigneProjet): Project => ({
 
 // ---------- Lectures partagées ----------
 
+/**
+ * Supabase renvoie au plus 1 000 lignes par requête : un relevé importé ou une
+ * année de suivi en compte davantage. On lit donc par tranches, dans un ordre
+ * stable, jusqu'à la dernière.
+ */
+async function toutesLesLignes<T>(requete: (debut: number, fin: number) => PromiseLike<{ data: unknown; error: PostgrestError | null }>): Promise<T[]> {
+  const TRANCHE = 1000;
+  const out: T[] = [];
+  for (let debut = 0; ; debut += TRANCHE) {
+    const { data, error } = await requete(debut, debut + TRANCHE - 1);
+    echec(error);
+    const lignes = (data ?? []) as T[];
+    out.push(...lignes);
+    if (lignes.length < TRANCHE) return out;
+  }
+}
+
+/** Découpe une liste d'identifiants : une adresse trop longue serait refusée. */
+function paquets<T>(liste: T[], taille = 200): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < liste.length; i += taille) out.push(liste.slice(i, i + taille));
+  return out;
+}
+
+let foyerEnCache: { user: string; foyer: string } | null = null;
+/** Le dossier des photos du foyer porte son identifiant. */
+async function monFoyer(): Promise<string> {
+  const { data: u } = await supabase.auth.getUser();
+  if (!u.user) throw new ApiError(401, "Connectez-vous pour continuer.");
+  if (foyerEnCache?.user === u.user.id) return foyerEnCache.foyer;
+  const { data, error } = await supabase.from("membres").select("foyer_id").eq("user_id", u.user.id).single();
+  echec(error);
+  foyerEnCache = { user: u.user.id, foyer: (data as { foyer_id: string }).foyer_id };
+  return foyerEnCache.foyer;
+}
+
+const BUCKET = "tickets";
+
+async function supprimerPhotos(chemins: (string | null)[]) {
+  const liste = chemins.filter((c): c is string => !!c && !c.startsWith("/"));
+  if (liste.length) await supabase.storage.from(BUCKET).remove(liste);
+}
+
 async function transaction(id: number) {
   const { data, error } = await supabase.from("transactions_detail").select("*").eq("id", id).single();
   echec(error);
-  return versTransaction(data as LigneTransaction);
+  const t = versTransaction(data as LigneTransaction);
+  // La photo est privée : on l'affiche par un lien signé, valable une heure.
+  if (t.photoPath && !t.photoPath.startsWith("/")) {
+    const { data: lien } = await supabase.storage.from(BUCKET).createSignedUrl(t.photoPath, 3600);
+    t.photoPath = lien?.signedUrl ?? null;
+  }
+  return t;
 }
 
 async function categories(): Promise<Category[]> {
@@ -256,10 +315,10 @@ const routes: Route[] = [
     if (texte) r = r.or(`label.ilike.%${texte}%,note.ilike.%${texte}%,category_name.ilike.%${texte}%`);
     r = r.order("date", { ascending: false }).order("id", { ascending: false });
     const limit = entier(q.get("limit"));
-    if (limit) r = r.limit(limit);
-    const { data, error } = await r;
-    echec(error);
-    return (data as LigneTransaction[]).map(versTransaction);
+    const lignes = limit
+      ? await toutesLesLignes<LigneTransaction>((a, b) => r.range(a, Math.min(b, limit - 1)))
+      : await toutesLesLignes<LigneTransaction>((a, b) => r.range(a, b));
+    return lignes.slice(0, limit ?? lignes.length).map(versTransaction);
   }],
   ["GET", /^\/api\/transactions\/labels$/, async (_p, q) => {
     const { data, error } = await supabase.rpc("suggestions_libelles", { p_texte: q.get("q") ?? "", p_limite: 8 });
@@ -292,18 +351,23 @@ const routes: Route[] = [
   }],
   ["POST", /^\/api\/transactions\/bulk$/, async (_p, _q, body) => {
     const { ids, action, categoryId } = valider(bulkTransactionInput, body);
-    let req;
-    if (action === "recategorize") {
-      if (categoryId === null) throw new ApiError(400, "Choisissez une catégorie");
-      req = supabase.from("transactions").update({ category_id: categoryId, status: "confirmed" }).in("id", ids).neq("type", "transfer");
-    } else if (action === "delete") {
-      req = supabase.from("transactions").delete().in("id", ids);
-    } else {
-      req = supabase.from("transactions").update({ status: "confirmed" }).in("id", ids);
+    if (action === "recategorize" && categoryId === null) throw new ApiError(400, "Choisissez une catégorie");
+    let done = 0;
+    for (const lot of paquets(ids)) {
+      let req;
+      if (action === "recategorize") {
+        req = supabase.from("transactions").update({ category_id: categoryId, status: "confirmed" }).in("id", lot).neq("type", "transfer");
+      } else if (action === "delete") {
+        req = supabase.from("transactions").delete().in("id", lot);
+      } else {
+        req = supabase.from("transactions").update({ status: "confirmed" }).in("id", lot);
+      }
+      const { data, error } = await req.select("id, photo_path");
+      echec(error);
+      if (action === "delete") await supprimerPhotos((data as { photo_path: string | null }[]).map((x) => x.photo_path));
+      done += (data ?? []).length;
     }
-    const { data, error } = await req.select("id");
-    echec(error);
-    return { done: (data ?? []).length };
+    return { done };
   }],
   ["POST", /^\/api\/transactions\/(\d+)\/confirm$/, async ([id]) => {
     const { error } = await supabase.from("transactions").update({ status: "confirmed" }).eq("id", Number(id));
@@ -317,8 +381,30 @@ const routes: Route[] = [
     echec(error);
     return data ?? { month: null, sub: null, parent: null };
   }],
-  ["POST", /^\/api\/transactions\/(\d+)\/photo$/, pasEncore(2, "La photo de ticket")],
-  ["DELETE", /^\/api\/transactions\/(\d+)\/photo$/, pasEncore(2, "La photo de ticket")],
+  ["POST", /^\/api\/transactions\/(\d+)\/photo$/, async ([id], _q, body) => {
+    const fichier = body instanceof FormData ? body.get("photo") : null;
+    if (!(fichier instanceof Blob)) throw new ApiError(400, "Photo manquante");
+    if (fichier.size > 10 * 1024 * 1024) throw new ApiError(400, "Photo trop lourde (10 Mo max)");
+    const octets = new Uint8Array(await fichier.arrayBuffer());
+    const type = typeImage(octets);
+    if (!type) throw new ApiError(400, "Ce fichier n'est pas une photo (JPEG, PNG ou WebP).");
+    const { data: avant, error: e1 } = await supabase.from("transactions").select("photo_path").eq("id", Number(id)).single();
+    echec(e1);
+    const chemin = `${await monFoyer()}/${id}-${Date.now()}.${EXTENSION_IMAGE[type]}`;
+    const { error: e2 } = await supabase.storage.from(BUCKET).upload(chemin, octets, { contentType: type, upsert: false });
+    if (e2) throw new ApiError(400, e2.message);
+    const { error: e3 } = await supabase.from("transactions").update({ photo_path: chemin }).eq("id", Number(id));
+    echec(e3);
+    await supprimerPhotos([(avant as { photo_path: string | null }).photo_path]);
+    return transaction(Number(id));
+  }],
+  ["DELETE", /^\/api\/transactions\/(\d+)\/photo$/, async ([id]) => {
+    const { data, error } = await supabase.from("transactions").select("photo_path").eq("id", Number(id)).single();
+    echec(error);
+    echec((await supabase.from("transactions").update({ photo_path: null }).eq("id", Number(id))).error);
+    await supprimerPhotos([(data as { photo_path: string | null }).photo_path]);
+    return transaction(Number(id));
+  }],
   ["GET", /^\/api\/transactions\/(\d+)$/, ([id]) => transaction(Number(id))],
   ["POST", /^\/api\/transactions$/, async (_p, _q, body) => {
     const v = valider(transactionInput, body);
@@ -334,9 +420,10 @@ const routes: Route[] = [
     return transaction(Number(id));
   }],
   ["DELETE", /^\/api\/transactions\/(\d+)$/, async ([id]) => {
-    const { data, error } = await supabase.from("transactions").delete().eq("id", Number(id)).select("id");
+    const { data, error } = await supabase.from("transactions").delete().eq("id", Number(id)).select("id, photo_path");
     echec(error);
     if (!data?.length) throw new ApiError(404, "Introuvable");
+    await supprimerPhotos((data as { photo_path: string | null }[]).map((x) => x.photo_path));
     return { ok: true };
   }],
 
@@ -472,12 +559,7 @@ const routes: Route[] = [
   ["GET", /^\/api\/version$/, async () => ({ commit: __VERSION__.commit, date: __VERSION__.date, interfaceLe: __VERSION__.construite })],
 
   // Pas encore migré
-  ["GET", /^\/api\/stats(\/.*)?$/, pasEncore(2, "Le suivi détaillé")],
-  ["POST", /^\/api\/import\//, pasEncore(2, "L'import de relevé")],
-  ["GET", /^\/api\/imports$/, async () => []],
-  ["DELETE", /^\/api\/imports\/(\d+)$/, pasEncore(2, "L'annulation d'import")],
-  ["GET", /^\/api\/backup\.json$/, pasEncore(2, "La sauvegarde")],
-  ["POST", /^\/api\/backup\.json$/, pasEncore(2, "La restauration")],
+  ...routesEtape2(),
   ["GET", /^\/api\/ai\/usage$/, async () => ({ mois: todayIso().slice(0, 7), appels: 0, entree: 0, sortie: 0, centsUsd: 0, parFonction: [], plafondCents: 500, consommeCents: 0, depasse: false })],
   ["GET", /^\/api\/ai\//, pasEncore(3, "L'IA")],
   ["POST", /^\/api\/ai\//, pasEncore(3, "L'IA")],
@@ -485,6 +567,241 @@ const routes: Route[] = [
   ["POST", /^\/api\/coach\//, pasEncore(3, "Le coach")],
   ["DELETE", /^\/api\/coach\//, pasEncore(3, "Le coach")],
 ];
+
+// ---------- Étape 2 : suivi, import de relevé, sauvegarde ----------
+
+const periode = (v: string | null): PeriodKey => (PERIOD_KEYS.includes(v as PeriodKey) ? (v as PeriodKey) : "1m");
+
+async function categoriesSuivi(): Promise<CategorieSuivi[]> {
+  return (await categories()).map((c) => ({ id: c.id, name: c.name, icon: c.icon, parent_id: c.parentId, kind: c.kind, sort: c.sort, avoidable: c.avoidable }));
+}
+
+/** Totaux par jour et par catégorie entre deux dates : tout le Suivi se calcule à partir d'eux. */
+async function lignesJour(du: string, au: string): Promise<LigneJour[]> {
+  return toutesLesLignes<LigneJour>((a, b) => supabase.rpc("totaux_jour", { p_du: du, p_au: au }).range(a, b));
+}
+
+// Import de relevé
+
+/** Le fichier tel que la banque l'a écrit : UTF-8, ou Windows-1252 pour les relevés plus anciens. */
+async function lireCsv(fichier: Blob): Promise<string> {
+  const octets = new Uint8Array(await fichier.arrayBuffer());
+  const utf8 = new TextDecoder("utf-8").decode(octets);
+  return utf8.includes("\uFFFD") ? new TextDecoder("windows-1252").decode(octets) : utf8;
+}
+
+const cleBanque = (bank: string) => `importMapping:${bank.trim().toLowerCase()}`;
+
+async function reglage(cle: string): Promise<string | null> {
+  const { data, error } = await supabase.from("settings").select("value").eq("key", cle).maybeSingle();
+  echec(error);
+  return (data as { value: string } | null)?.value ?? null;
+}
+
+async function correspondanceMemorisee(bank: string): Promise<ImportColumnMapping | null> {
+  const brut = await reglage(cleBanque(bank));
+  if (!brut) return null;
+  const m = JSON.parse(brut) as ImportColumnMapping;
+  return { ...m, category: m.category ?? null, subCategory: m.subCategory ?? null };
+}
+
+async function banquesConnues(): Promise<string[]> {
+  const { data, error } = await supabase.from("settings").select("key").like("key", "importMapping:%");
+  echec(error);
+  return (data as { key: string }[]).map((r) => r.key.slice("importMapping:".length));
+}
+
+async function reglesApprises() {
+  return rapprocheur(await toutesLesLignes<RuleRow>((a, b) =>
+    supabase.from("category_rules").select("pattern, category_id, wallet_id").order("id").range(a, b)));
+}
+
+/** Doublon = même montant, même sens, date à ± 3 jours, libellé proche — dans le fichier ou déjà en base. */
+async function marquerDoublons(rows: ImportPreviewRow[], walletId: number) {
+  const dates = rows.filter((r) => !r.error && r.date).map((r) => r.date!).sort();
+  if (!dates.length) return;
+  const existantes = await toutesLesLignes<{ label: string; type: TxType; amount: number; date: string }>((a, b) =>
+    supabase.from("transactions").select("label, type, amount, date").eq("wallet_id", walletId)
+      .gte("date", addDays(dates[0], -3)).lte("date", addDays(dates[dates.length - 1], 3)).order("id").range(a, b));
+  const parMontant = new Map<string, { label: string; date: string }[]>();
+  for (const e of existantes) {
+    const k = `${e.type}|${e.amount}`;
+    parMontant.set(k, [...(parMontant.get(k) ?? []), e]);
+  }
+  const vus = new Set<string>();
+  for (const r of rows) {
+    if (r.error || !r.date || r.amount === null) continue;
+    const norm = normalizeLabel(r.label);
+    const cle = `${r.date}|${r.amount}|${norm}`;
+    if (vus.has(cle)) { r.duplicate = true; continue; }
+    vus.add(cle);
+    const debut = addDays(r.date, -3), fin = addDays(r.date, 3);
+    r.duplicate = (parMontant.get(`${r.type}|${Math.abs(r.amount)}`) ?? [])
+      .filter((c) => c.date >= debut && c.date <= fin)
+      .some((c) => {
+        const cn = normalizeLabel(c.label);
+        return !cn || !norm || cn === norm || cn.includes(norm) || norm.includes(cn);
+      });
+  }
+}
+
+/** Sans IA (étape 3), une ligne qu'aucune règle ni la banque ne classe va dans « Divers » ou « Autres revenus ». */
+function categorieParDefaut(cats: Category[], type: TxType): number {
+  const nom = type === "income" ? "Autres revenus" : "Divers";
+  return cats.find((c) => c.name === nom && !c.technicalKey)?.id
+    ?? cats.find((c) => c.kind === (type === "income" ? "income" : "expense") && c.parentId !== null)!.id;
+}
+
+async function lotImport(id: number): Promise<ImportBatch> {
+  const lots = await listeImports();
+  const lot = lots.find((x) => x.id === id);
+  if (!lot) throw new ApiError(404, "Import introuvable");
+  return lot;
+}
+
+async function listeImports(): Promise<ImportBatch[]> {
+  const { data, error } = await supabase.rpc("imports_detail");
+  echec(error);
+  return (data as { id: number; bank: string; wallet_id: number; wallet_name: string; file_name: string; created_count: number; skipped_count: number; created_at: string; remaining: number }[])
+    .map((r) => ({ id: r.id, bank: r.bank, walletId: r.wallet_id, walletName: r.wallet_name, fileName: r.file_name, createdCount: r.created_count, skippedCount: r.skipped_count, createdAt: r.created_at, remaining: r.remaining }));
+}
+
+// Sauvegarde
+
+const TABLES_SAUVEGARDE = ["wallets", "categories", "projects", "recurrences", "imports", "transactions", "budgets", "settings", "category_rules", "chat_messages"] as const;
+/** Colonnes propres à la version en ligne, inutiles dans un fichier de sauvegarde. */
+const COLONNES_INTERNES = ["foyer_id", "created_by", "user_id"];
+
+async function sauvegarde(): Promise<Record<string, unknown[]>> {
+  const out: Record<string, unknown[]> = { version: [2] };
+  for (const t of TABLES_SAUVEGARDE) {
+    const cle = t === "budgets" ? "category_id" : t === "settings" ? "key" : "id";
+    const lignes = await toutesLesLignes<Record<string, unknown>>((a, b) => supabase.from(t).select("*").order(cle).range(a, b));
+    out[t] = lignes.map((l) => Object.fromEntries(Object.entries(l).filter(([k]) => !COLONNES_INTERNES.includes(k))));
+  }
+  return out;
+}
+
+function celluleCsv(v: string | number | null | undefined): string {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function routesEtape2(): Route[] {
+  return [
+    // Suivi
+    ["GET", /^\/api\/stats\/period$/, async (_p, q) => {
+      const type = q.get("type") === "income" ? "income" : "expense";
+      const key = periode(q.get("period"));
+      const r = periodRange(key, todayIso());
+      const [lignes, cats] = await Promise.all([lignesJour(r.prevFrom, r.to), categoriesSuivi()]);
+      return calculerPeriode(lignes, cats, type, key, todayIso());
+    }],
+    ["GET", /^\/api\/stats\/avoidable$/, async (_p, q) => {
+      const key = periode(q.get("period"));
+      const today = todayIso();
+      const r = periodRange(key, today);
+      const { from, to } = bornesLecture(today);
+      const [lignes, cats, projetsEnCours, { data: top, error }] = await Promise.all([
+        lignesJour(from, to), categoriesSuivi(), projets(),
+        supabase.rpc("libelles_evitables", { p_du: r.from, p_au: r.to }),
+      ]);
+      echec(error);
+      const topLabels = (top as { label: string; count: number; total: number; category_name: string }[])
+        .map((x) => ({ label: x.label, count: Number(x.count), total: x.total, categoryName: x.category_name }));
+      return calculerEvitables(lignes, cats, key, today, projetsEnCours.find((p) => !p.done)?.name ?? null, topLabels);
+    }],
+    // L'objectif rédigé par l'IA arrive à l'étape 3 ; d'ici là, l'objectif calculé.
+    ["GET", /^\/api\/stats\/avoidable\/goal$/, async (_p, q) => {
+      const s = (await appeler<{ goal: unknown }>("GET", `/api/stats/avoidable?period=${periode(q.get("period"))}`));
+      return { goal: s.goal };
+    }],
+    ["GET", /^\/api\/stats$/, async (_p, q) => {
+      const month = q.get("month") ?? todayIso().slice(0, 7);
+      const [lignes, cats] = await Promise.all([lignesJour(`${shiftMonth(month, -11)}-01`, addDays(`${shiftMonth(month, 1)}-01`, -1)), categoriesSuivi()]);
+      return calculerStats(lignes, cats, month);
+    }],
+
+    // Import de relevé
+    ["POST", /^\/api\/import\/preview$/, async (_p, _q, body) => {
+      if (!(body instanceof FormData)) throw new ApiError(400, "Fichier manquant");
+      const fichier = body.get("file");
+      if (!(fichier instanceof Blob)) throw new ApiError(400, "Fichier manquant");
+      if (fichier.size > 5 * 1024 * 1024) throw new ApiError(400, "Fichier trop lourd (5 Mo max)");
+      const walletId = entier(String(body.get("walletId") ?? ""));
+      if (!walletId) throw new ApiError(400, "Portefeuille manquant");
+      const bank = String(body.get("bank") ?? "").trim() || null;
+      const brut = body.get("mapping");
+      const force = typeof brut === "string" && brut ? (JSON.parse(brut) as ImportColumnMapping) : undefined;
+      const csv = await lireCsv(fichier);
+      const table = parseCsv(csv);
+      if (table.length < 2) throw new ApiError(400, "Le fichier ne contient pas de lignes exploitables");
+      const columns = table[0].map((c, i) => c.trim() || `Colonne ${i + 1}`);
+      const corps = table.slice(1);
+      const memorisee = bank ? await correspondanceMemorisee(bank) : null;
+      const mapping = force ?? memorisee ?? detectMapping(columns, corps.slice(0, 20));
+      const rows = applyMapping(corps, mapping);
+      const [, cats, regles, banks] = await Promise.all([marquerDoublons(rows, walletId), categories(), reglesApprises(), banquesConnues()]);
+      for (const r of rows) {
+        if (r.error || r.type === null) { r.categorySource = null; continue; }
+        if (regles.match(r.label)) r.categorySource = "rule";
+        else if (matchBankCategory(cats, r.type, r.bankCategory, r.bankSubCategory) !== null) r.categorySource = "bank";
+        else r.categorySource = "ai";
+      }
+      return { columns, sample: corps.slice(0, 5), mapping, savedMapping: memorisee !== null && !force, rows, csv, banks };
+    }],
+    ["POST", /^\/api\/import\/commit$/, async (_p, _q, body) => {
+      const input = valider(importCommitInput, body);
+      const rows = applyMapping(parseCsv(input.csv).slice(1), input.mapping);
+      const [, cats, regles] = await Promise.all([marquerDoublons(rows, input.walletId), categories(), reglesApprises()]);
+      echec((await supabase.from("settings").upsert({ key: cleBanque(input.bank), value: JSON.stringify(input.mapping) }, { onConflict: "foyer_id,key" })).error);
+      const { data: lot, error } = await supabase.from("imports").insert({ bank: input.bank, wallet_id: input.walletId, file_name: input.fileName }).select("id").single();
+      echec(error);
+      const importId = (lot as { id: number }).id;
+      let ignorees = 0;
+      const lignes = [];
+      for (const r of rows) {
+        if (r.error || !r.date || r.amount === null || (input.skipDuplicates && r.duplicate)) { ignorees++; continue; }
+        const regle = regles.match(r.label)?.categoryId ?? null;
+        const categoryId = regle ?? matchBankCategory(cats, r.type!, r.bankCategory, r.bankSubCategory) ?? categorieParDefaut(cats, r.type!);
+        lignes.push({
+          type: r.type, amount: Math.abs(r.amount), date: r.date, wallet_id: input.walletId, category_id: categoryId,
+          label: r.label, import_id: importId, status: regle !== null && input.autoConfirmKnown ? "confirmed" : "to_verify",
+        });
+      }
+      for (const paquet of paquets(lignes, 500)) echec((await supabase.from("transactions").insert(paquet)).error);
+      echec((await supabase.from("imports").update({ created_count: lignes.length, skipped_count: ignorees }).eq("id", importId)).error);
+      return lotImport(importId);
+    }],
+    ["GET", /^\/api\/imports$/, () => listeImports()],
+    ["DELETE", /^\/api\/imports\/(\d+)$/, async ([id]) => {
+      await lotImport(Number(id));
+      const { data, error } = await supabase.from("transactions").delete().eq("import_id", Number(id)).select("id");
+      echec(error);
+      echec((await supabase.from("imports").delete().eq("id", Number(id))).error);
+      return { deleted: (data ?? []).length };
+    }],
+
+    // Sauvegarde
+    ["GET", /^\/api\/backup\.json$/, () => sauvegarde()],
+    ["POST", /^\/api\/backup\.json$/, async (_p, _q, body) => {
+      const d = body as Record<string, unknown>;
+      if (!d || !Array.isArray(d.transactions) || !Array.isArray(d.wallets)) throw new ApiError(400, "Fichier de sauvegarde invalide");
+      const { data, error } = await supabase.rpc("restaurer_sauvegarde", { p_donnees: d });
+      echec(error);
+      return { ok: true, ...(data as object) };
+    }],
+    ["GET", /^\/api\/export\.csv$/, async () => {
+      const lignes = await toutesLesLignes<LigneTransaction>((a, b) =>
+        supabase.from("transactions_detail").select("*").order("date", { ascending: false }).order("id", { ascending: false }).range(a, b));
+      const entete = ["date", "heure", "type", "montant", "categorie", "portefeuille", "vers_portefeuille", "moyen_paiement", "libelle", "note", "saisi_par"];
+      const corps = lignes.map(versTransaction).map((t) =>
+        [t.date, t.time, t.type, (t.amount / 100).toFixed(2).replace(".", ","), t.categoryName, t.walletName, t.toWalletName,
+          t.paymentMethod === "card" ? "Carte" : t.paymentMethod === "cash" ? "Espèces" : null, t.label, t.note, t.createdBy].map(celluleCsv).join(";"));
+      return "\uFEFF" + [entete.join(";"), ...corps].join("\n");
+    }],
+  ];
+}
 
 /** Point d'entrée unique : même signature que l'ancien fetch vers le serveur. */
 export async function appeler<T>(methode: string, url: string, body?: unknown): Promise<T> {
