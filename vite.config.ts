@@ -26,7 +26,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icon.svg"],
+      includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
         name: "Mon copilote budget",
         short_name: "Budget",
@@ -36,8 +36,13 @@ export default defineConfig({
         background_color: "#f8fafc",
         display: "standalone",
         start_url: "/",
+        // PNG en plus du SVG : Android en a besoin pour proposer l'installation,
+        // et la version « maskable » remplit le rond ou le carré du lanceur.
         icons: [
-          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
+          { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
         ],
       },
       workbox: {
