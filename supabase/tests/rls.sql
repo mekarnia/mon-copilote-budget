@@ -42,4 +42,13 @@ insert into resultat select 'inconnu : aucune transaction', count(*) = 0 from pu
 insert into resultat select 'inconnu : un seul foyer visible', count(*) = 1 from public.foyers;
 insert into resultat select 'inconnu : un seul membre visible', count(*) = 1 from public.membres;
 insert into resultat select 'inconnu : solde nul', (public.accueil(to_char(current_date, 'YYYY-MM'))->>'expense')::bigint = 0;
+-- Échéances : un loyer mensuel au 1er, déclaré il y a trois mois, rattrape trois opérations.
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-00000000000a', false);
+insert into public.recurrences (label, type, amount, frequency, day, wallet_id, category_id, next_date)
+  select 'Loyer', 'expense', 80000, 'monthly', 1, (select id from public.wallets where name = 'Compte courant'),
+         (select id from public.categories where name = 'Loyer ou crédit'), date '2026-08-01';
+insert into resultat select 'échéances rattrapées', public.executer_echeances(date '2026-10-15') = 3;
+insert into resultat select 'échéances non rejouées', public.executer_echeances(date '2026-10-15') = 0;
+insert into resultat select 'prochaine échéance', (select next_date from public.recurrences) = date '2026-11-01';
+insert into resultat select 'pas de règle pour une échéance', not exists (select 1 from public.category_rules where pattern = 'loyer');
 reset role; select essai, ok from resultat;

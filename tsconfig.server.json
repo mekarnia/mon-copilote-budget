@@ -14,9 +14,9 @@
     "noImplicitOverride": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "baseUrl": ".",
-    "paths": { "@shared/*": ["shared/*"] }
+    "paths": { "@shared/*": ["shared/*"], "@/*": ["src/*"] }
   },
-  "include": ["server", "shared", "tests"]
+  "include": ["server", "shared", "tests", "src/globals.d.ts"]
 }

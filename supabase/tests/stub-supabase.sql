@@ -7,8 +7,18 @@ do $$ begin
 end $$;
 create schema auth;
 create table auth.users (id uuid primary key, email text);
-create function auth.uid() returns uuid language sql stable as
-  $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+-- Comme Supabase : l'identifiant vient du JWT, posé par PostgREST dans
+-- request.jwt.claims, ou directement dans request.jwt.claim.sub par les tests SQL.
+create function auth.uid() returns uuid language sql stable as $$
+  select nullif(coalesce(current_setting('request.jwt.claim.sub', true),
+                         nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'), '')::uuid
+$$;
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'authenticator') then
+    create role authenticator login password 'essai' noinherit;
+  end if;
+end $$;
+grant anon, authenticated, service_role to authenticator;
 grant usage on schema auth to anon, authenticated;
 grant execute on function auth.uid() to anon, authenticated;
 grant usage on schema public to anon, authenticated, service_role;

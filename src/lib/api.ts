@@ -1,27 +1,14 @@
-export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
+import { ApiError } from "./erreur";
 
+export { ApiError };
+
+/**
+ * Les écrans appellent toujours /api/… ; ces adresses sont désormais servies par
+ * Supabase depuis le navigateur (voir backend.ts), chargé au premier appel.
+ */
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    headers: body instanceof FormData ? {} : { "Content-Type": "application/json" },
-    body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const data = (await res.json()) as { error?: string };
-      if (data?.error) message = data.error;
-    } catch {
-      /* corps non JSON */
-    }
-    throw new ApiError(res.status, message);
-  }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const { appeler } = await import("./backend");
+  return appeler<T>(method, url, body);
 }
 
 export const api = {

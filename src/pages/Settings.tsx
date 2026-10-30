@@ -11,7 +11,7 @@ import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImportSettings } from "./ImportSettings";
 import { useDeleteRule, useRules, useSetAvoidable } from "@/lib/queries";
 import { formatCents } from "@shared/money";
-import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { WALLET_TYPES, type Category, type Recurrence, type TxType, type Wallet, type WalletType } from "@shared/types";
 
 const WALLET_LABEL: Record<WalletType, string> = { courant: "Compte courant", especes: "Espèces", livret: "Livret / épargne", autre: "Autre" };
@@ -69,6 +69,7 @@ function SettingsHome() {
           </Link>
         ))}
       </div>
+      <AccesCarte />
     </div>
   );
 }
@@ -317,7 +318,6 @@ function BackupSettings() {
         <input type="file" accept="application/json" className="input" onChange={(e) => e.target.files?.[0] && onRestore(e.target.files[0])} />
         {message && <p className="text-sm">{message}</p>}
       </div>
-      <AccesCarte />
       <div className="card space-y-1 text-xs text-slate-500">
         <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Version installée</p>
         <p>Code : <span className="font-mono">{version?.commit ?? "…"}</span>{version?.date && ` · ${version.date}`}</p>
@@ -433,88 +433,71 @@ function RulesSettings() {
   );
 }
 
-interface EtatSession { configure: boolean; connecte: boolean; local: boolean; modifiable?: boolean }
+interface Foyer { id: string; nom: string; code_invitation: string }
 
 /**
- * Le mot de passe se choisit ici, et nulle part ailleurs.
- *
- * Il n'était demandé qu'une fois créé, et rien ne permettait de le créer :
- * l'écran de connexion restait invisible pour qui ne touche pas au serveur.
+ * Le foyer partagé : qui en fait partie, et le code qui permet au conjoint de le
+ * rejoindre. Chacun garde son propre compte ; les données sont communes.
  */
 function AccesCarte() {
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["session"], queryFn: () => api.get<EtatSession>("/api/session") });
-  const [ouvert, setOuvert] = useState(false);
-  const [actuel, setActuel] = useState("");
-  const [nouveau, setNouveau] = useState("");
-  const [confirme, setConfirme] = useState("");
+  const { data } = useQuery({
+    queryKey: ["foyer"],
+    queryFn: async () => {
+      const [{ data: foyer, error }, { data: membres, error: e2 }, { data: moi }] = await Promise.all([
+        supabase.from("foyers").select("id, nom, code_invitation").single(),
+        supabase.from("membres").select("user_id, prenom, role").order("created_at"),
+        supabase.auth.getUser(),
+      ]);
+      if (error || e2) throw new Error((error ?? e2)!.message);
+      return { foyer: foyer as Foyer, membres: membres as { user_id: string; prenom: string; role: string }[], moi: moi.user };
+    },
+  });
   const [message, setMessage] = useState<string | null>(null);
-  const [erreur, setErreur] = useState<string | null>(null);
-
   if (!data) return null;
 
-  async function enregistrer(e: React.FormEvent) {
-    e.preventDefault();
-    setErreur(null);
-    setMessage(null);
-    if (nouveau !== confirme) return setErreur("Les deux mots de passe ne sont pas identiques.");
+  async function renouveler() {
+    if (!confirm("L'ancien code ne permettra plus de rejoindre le foyer. Continuer ?")) return;
+    const { error } = await supabase.rpc("renouveler_code");
+    setMessage(error ? error.message : "Nouveau code créé.");
+    void qc.invalidateQueries({ queryKey: ["foyer"] });
+  }
+
+  async function copier() {
     try {
-      await api.put("/api/session", { actuel, nouveau });
-      setActuel(""); setNouveau(""); setConfirme(""); setOuvert(false);
-      setMessage("Mot de passe enregistré. Il sera demandé sur vos autres appareils.");
-      void qc.invalidateQueries({ queryKey: ["session"] });
-    } catch (e) {
-      setErreur((e as Error).message);
+      await navigator.clipboard.writeText(data!.foyer.code_invitation);
+      setMessage("Code copié.");
+    } catch {
+      setMessage("Copie impossible : recopiez le code à la main.");
     }
   }
 
   return (
     <div className="card space-y-3">
-      <h2 className="font-semibold">Accès</h2>
-      <p className="text-sm text-slate-500">
-        {data.configure
-          ? "Un mot de passe protège vos comptes. Il est demandé sur chaque appareil, puis retenu trois mois."
-          : "Aucun mot de passe. L'application s'ouvre directement à la maison, et refuse tout appel venu d'ailleurs. Pour y accéder depuis l'extérieur, il en faut un."}
-      </p>
-      {message && <p className="text-sm text-emerald-600">{message}</p>}
-
-      {data.modifiable === false && (
-        <p className="text-xs text-slate-500">
-          Ce mot de passe est fourni par l'hébergeur. Pour le changer : <code>fly secrets set BUDGET_MOT_DE_PASSE="…"</code>.
-          Tous les appareils seront alors déconnectés.
+      <h2 className="font-semibold">Foyer : {data.foyer.nom}</h2>
+      <ul className="space-y-1 text-sm">
+        {data.membres.map((m) => (
+          <li key={m.user_id} className="flex justify-between">
+            <span>{m.prenom || "Sans prénom"}{m.user_id === data.moi?.id && " (vous)"}</span>
+            <span className="text-slate-500">{m.role === "proprietaire" ? "Créateur" : "Membre"}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Pour inviter votre conjoint : il crée son compte dans l'application, puis saisit ce code.
         </p>
-      )}
-
-      {!ouvert && data.modifiable !== false && (
-        <button className="btn-ghost w-full" onClick={() => { setOuvert(true); setMessage(null); }}>
-          {data.configure ? "Changer le mot de passe" : "Protéger par un mot de passe"}
-        </button>
-      )}
-
-      {ouvert && (
-        <form className="space-y-3" onSubmit={enregistrer}>
-          {data.configure && (
-            <input className="input" type="password" autoComplete="current-password" placeholder="Mot de passe actuel"
-              aria-label="Mot de passe actuel" value={actuel} onChange={(e) => setActuel(e.target.value)} />
-          )}
-          <input className="input" type="password" autoComplete="new-password" placeholder="Nouveau mot de passe (8 caractères minimum)"
-            aria-label="Nouveau mot de passe" value={nouveau} onChange={(e) => setNouveau(e.target.value)} />
-          <input className="input" type="password" autoComplete="new-password" placeholder="Confirmez"
-            aria-label="Confirmez le nouveau mot de passe" value={confirme} onChange={(e) => setConfirme(e.target.value)} />
-          {erreur && <p className="text-sm font-medium text-rose-600">{erreur}</p>}
-          <p className="text-xs text-slate-500">Notez-le : il n'existe aucun moyen de le retrouver.</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" className="btn-ghost" onClick={() => { setOuvert(false); setErreur(null); }}>Annuler</button>
-            <button className="btn-primary" disabled={nouveau.length < 8}>Enregistrer</button>
-          </div>
-        </form>
-      )}
-
-      {data.configure && (
-        <button className="btn-ghost w-full" onClick={async () => { await api.del("/api/session"); window.location.replace("/"); }}>
-          Se déconnecter de cet appareil
-        </button>
-      )}
+        <p className="text-center font-mono text-2xl font-bold tracking-[0.3em]">{data.foyer.code_invitation}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button className="btn-ghost" onClick={copier}>Copier</button>
+          <button className="btn-ghost" onClick={renouveler}>Nouveau code</button>
+        </div>
+      </div>
+      {message && <p className="text-sm text-emerald-700 dark:text-emerald-400">{message}</p>}
+      <p className="text-xs text-slate-500">Connecté avec {data.moi?.email}.</p>
+      <button className="btn-ghost w-full" onClick={async () => { await supabase.auth.signOut(); window.location.replace("/"); }}>
+        Se déconnecter de cet appareil
+      </button>
     </div>
   );
 }
