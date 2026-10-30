@@ -30,3 +30,10 @@ attaque "rejoindre un second foyer" "select public.rejoindre_foyer('AAAAAAAA', '
 attaque "semer un autre foyer" "select public.semer_foyer(gen_random_uuid())"
 attaque "renommer une catégorie technique" "update public.categories set name = 'x' where technical_key = 'transfer' returning id"
 attaque "lire le foyer de l'autre par son code" "select 1/count(*) from public.foyers where nom = 'Foyer Mekarnia'"
+attaque "changer de foyer en modifiant sa fiche membre" \
+  "update public.membres set foyer_id = (select foyer_id from public.membres where prenom = 'Yaniss') where user_id = auth.uid()"
+attaque "se nommer propriétaire" "update public.membres set role = 'proprietaire' where user_id = auth.uid()"
+if $P -d essai -tA -c "set role anon" -c "select count(*) from public.transactions" >/dev/null 2>&1; then
+  echo "visiteur anonyme | ÉCHEC : lecture acceptée"; exit 1
+fi
+echo "visiteur anonyme | refusé"
