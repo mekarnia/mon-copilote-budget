@@ -26,7 +26,45 @@ async function charger() {
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+describe("raccord des morceaux de phrase", () => {
+  it("ne répète pas une phrase que Chrome renvoie en entier à chaque mot", async () => {
+    const { fusionner } = await charger();
+    const morceaux = ["1200", "1200 dinars", "1200 dinars de", "1200 dinars de courses"];
+    expect(morceaux.reduce(fusionner, "")).toBe("1200 dinars de courses");
+  });
+  it("recolle sur le chevauchement après une reprise", async () => {
+    const { fusionner } = await charger();
+    expect(fusionner("1200 dinars de courses", "de courses chez Ardis")).toBe("1200 dinars de courses chez Ardis");
+    expect(fusionner("1200 dinars", "chez Ardis")).toBe("1200 dinars chez Ardis");
+    expect(fusionner("1200 dinars de courses chez Ardis", "courses")).toBe("1200 dinars de courses chez Ardis");
+  });
+  it("ignore majuscules et ponctuation en comparant", async () => {
+    const { fusionner } = await charger();
+    expect(fusionner("1200 dinars de courses.", "De courses chez Ardis")).toBe("1200 dinars de courses. chez Ardis");
+  });
+});
+
 describe("dictée continue", () => {
+  it("ne double pas le texte quand Android répète ses résultats", async () => {
+    vi.useFakeTimers();
+    const { ecouter } = await charger();
+    const fin = vi.fn();
+    const auFil = vi.fn();
+    ecouter({ auFil, fin })!;
+    const m = FauxMoteur.instances[0];
+    // Comportement de Chrome Android en mode continu : chaque résultat reprend tout le début.
+    m.dire(["1200", true]);
+    m.dire(["1200", true], ["1200 dinars", true]);
+    m.dire(["1200", true], ["1200 dinars", true], ["1200 dinars de courses", true]);
+    m.onend!();
+    // Après la reprise, il redit encore la fin.
+    FauxMoteur.instances[1].dire(["de courses chez Ardis", true]);
+    expect(auFil).toHaveBeenLastCalledWith("1200 dinars de courses chez Ardis");
+    vi.advanceTimersByTime(3000);
+    expect(fin).toHaveBeenCalledWith("1200 dinars de courses chez Ardis");
+  });
+
+
   it("reprend quand le navigateur coupe en pleine phrase, et garde tout", async () => {
     vi.useFakeTimers();
     const { ecouter } = await charger();
